@@ -7,7 +7,12 @@
     
     <!-- Progress tracking terület -->
     <div id="progress-container" class="mt-4" style="display: none;">
-        <h4>Feldolgozási állapot</h4>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0">Feldolgozási állapot</h4>
+            <button id="reset-task" class="btn btn-danger btn-sm">
+                <i class="fas fa-stop-circle"></i> Feldolgozás Leállítása & Újraindítás
+            </button>
+        </div>
         <div class="progress mb-3">
             <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
                  role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
@@ -140,6 +145,55 @@ document.getElementById('start-pipeline').addEventListener('click', function() {
     startDataProcessing();
 });
 
+// Reset task button handler
+document.getElementById('reset-task').addEventListener('click', function() {
+    if (confirm('Biztosan le szeretnéd állítani a feldolgozást és újra kezdeni?\n\nEz törli a jelenlegi task állapotot és lehetővé teszi új feldolgozás indítását.')) {
+        resetTask();
+    }
+});
+
+function resetTask() {
+    // WebSocket lecsatlakoztatása
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+    
+    // Polling leállítása
+    if (window.progressPollingInterval) {
+        clearInterval(window.progressPollingInterval);
+        window.progressPollingInterval = null;
+    }
+    
+    // Task ID törlése
+    localStorage.removeItem('currentTaskId');
+    currentTaskId = null;
+    
+    // UI reset
+    hideProgressContainer();
+    hideCompletedContainer();
+    showStartContainer();
+    resetStartButton();
+    
+    // Success message
+    showAlert('A feldolgozás leállítva. Most újra elindíthatod az adatfeldolgozást.', 'info');
+}
+
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('.bg-light').insertBefore(alertDiv, document.querySelector('.bg-light').firstChild.nextSibling);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
 function startDataProcessing() {
     // Gomb letiltása
     const startBtn = document.getElementById('start-pipeline');
@@ -198,14 +252,12 @@ function connectWebSocket() {
 }
 
 // HTTP polling backup mechanism
-let pollingInterval = null;
-
 function startProgressPolling() {
-    if (pollingInterval) {
-        clearInterval(pollingInterval);
+    if (window.progressPollingInterval) {
+        clearInterval(window.progressPollingInterval);
     }
     
-    pollingInterval = setInterval(() => {
+    window.progressPollingInterval = setInterval(() => {
         if (currentTaskId) {
             fetch(`/task-status/${currentTaskId}`)
                 .then(response => response.json())
@@ -214,8 +266,8 @@ function startProgressPolling() {
                         updateProgressDisplay(data.status);
                         // Ha befejeződött, állítsuk le a polling-ot
                         if (data.status.status === 'completed' || data.status.status === 'failed') {
-                            clearInterval(pollingInterval);
-                            pollingInterval = null;
+                            clearInterval(window.progressPollingInterval);
+                            window.progressPollingInterval = null;
                         }
                     }
                 })
@@ -304,9 +356,27 @@ function showCompletedContainer(message) {
     localStorage.removeItem('currentTaskId');
     currentTaskId = null;
     
+    // Polling leállítása
+    if (window.progressPollingInterval) {
+        clearInterval(window.progressPollingInterval);
+        window.progressPollingInterval = null;
+    }
+    
     if (socket) {
         socket.disconnect();
     }
+}
+
+function hideProgressContainer() {
+    document.getElementById('progress-container').style.display = 'none';
+}
+
+function hideCompletedContainer() {
+    document.getElementById('completed-container').style.display = 'none';
+}
+
+function showStartContainer() {
+    document.getElementById('start-container').style.display = 'block';
 }
 
 function showErrorState(message) {
