@@ -1,0 +1,284 @@
+{% extends "base.html" %}
+
+{% block title %}Ártrend Előrejelzés{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Ártrend Előrejelzés</h1>
+    
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Szűrési paraméterek</h5>
+            <form id="trendForm">
+                <div class="row">
+                    <div class="col-md-3">
+                        <label for="district" class="form-label">Kerület (opcionális)</label>
+                        <select class="form-select" id="district" name="district">
+                            <option value="">Összes kerület</option>
+                            <option value="I. kerület">I. kerület</option>
+                            <option value="II. kerület">II. kerület</option>
+                            <option value="II/A. kerület">II/A. kerület</option>
+                            <option value="III. kerület">III. kerület</option>
+                            <option value="IV. kerület">IV. kerület</option>
+                            <option value="V. kerület">V. kerület</option>
+                            <option value="VI. kerület">VI. kerület</option>
+                            <option value="VII. kerület">VII. kerület</option>
+                            <option value="VIII. kerület">VIII. kerület</option>
+                            <option value="IX. kerület">IX. kerület</option>
+                            <option value="X. kerület">X. kerület</option>
+                            <option value="XI. kerület">XI. kerület</option>
+                            <option value="XII. kerület">XII. kerület</option>
+                            <option value="XIII. kerület">XIII. kerület</option>
+                            <option value="XIV. kerület">XIV. kerület</option>
+                            <option value="XV. kerület">XV. kerület</option>
+                            <option value="XVI. kerület">XVI. kerület</option>
+                            <option value="XVII. kerület">XVII. kerület</option>
+                            <option value="XVIII. kerület">XVIII. kerület</option>
+                            <option value="XIX. kerület">XIX. kerület</option>
+                            <option value="XX. kerület">XX. kerület</option>
+                            <option value="XXI. kerület">XXI. kerület</option>
+                            <option value="XXII. kerület">XXII. kerület</option>
+                            <option value="XXIII. kerület">XXIII. kerület</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="area_min" class="form-label">Minimális terület (m²)</label>
+                        <input type="number" class="form-control" id="area_min" name="area_min" min="0" placeholder="pl. 50">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="area_max" class="form-label">Maximális terület (m²)</label>
+                        <input type="number" class="form-control" id="area_max" name="area_max" min="0" placeholder="pl. 100">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="lookback_months" class="form-label">Visszatekintés (hónap): <span id="lookbackValue">12</span></label>
+                        <input type="range" class="form-range" id="lookback_months" name="lookback_months" min="3" max="36" value="12" step="1">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-primary">Elemzés indítása</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="loadingDiv" class="alert alert-info" style="display: none;">
+        <div class="spinner-border spinner-border-sm me-2" role="status">
+            <span class="visually-hidden">Betöltés...</span>
+        </div>
+        Ártrend elemzés folyamatban...
+    </div>
+    
+    <div id="errorDiv" class="alert alert-danger" style="display: none;"></div>
+    
+    <div id="resultsDiv" style="display: none;">
+        <!-- Trend summary -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Előrejelzési összefoglaló</h5>
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h6>Jelenlegi átlagár</h6>
+                        <h4 id="currentPrice" class="text-primary">-</h4>
+                        <small class="text-muted">Ft/m²</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h6>Előrejelzés 6 hónapra</h6>
+                        <h4 id="predictedPrice" class="text-info">-</h4>
+                        <small class="text-muted">Ft/m²</small>
+                    </div>
+                    <div class="col-md-3">
+                        <h6>Változás</h6>
+                        <h4 id="changePercent">-</h4>
+                    </div>
+                    <div class="col-md-3">
+                        <h6>Trend</h6>
+                        <h4><span id="trendBadge" class="badge">-</span></h4>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <small class="text-muted">Havi trendemelkedés: <strong id="monthlySlope">-</strong> Ft/m²/hónap</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Chart -->
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Ártrend vizualizáció</h5>
+                <canvas id="trendChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    let trendChart = null;
+    
+    // Update lookback slider value display
+    document.getElementById('lookback_months').addEventListener('input', function(e) {
+        document.getElementById('lookbackValue').textContent = e.target.value;
+    });
+    
+    // Form submission
+    document.getElementById('trendForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        
+        // Show loading, hide results/errors
+        document.getElementById('loadingDiv').style.display = 'block';
+        document.getElementById('resultsDiv').style.display = 'none';
+        document.getElementById('errorDiv').style.display = 'none';
+        
+        try {
+            const response = await fetch('/analyze-trends', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok || data.error) {
+                throw new Error(data.error || 'Hiba történt az elemzés során');
+            }
+            
+            // Display results
+            displayResults(data);
+            
+        } catch (error) {
+            document.getElementById('errorDiv').textContent = error.message;
+            document.getElementById('errorDiv').style.display = 'block';
+        } finally {
+            document.getElementById('loadingDiv').style.display = 'none';
+        }
+    });
+    
+    function displayResults(data) {
+        // Update summary cards
+        document.getElementById('currentPrice').textContent = 
+            Math.round(data.current_avg_price_per_sqm).toLocaleString('hu-HU');
+        document.getElementById('predictedPrice').textContent = 
+            Math.round(data.predicted_6m_price_per_sqm).toLocaleString('hu-HU');
+        
+        const changePercent = data.change_6m_percent.toFixed(2);
+        const changeText = (data.change_6m_percent > 0 ? '+' : '') + changePercent + '%';
+        const changeColor = data.change_6m_percent > 0 ? 'text-success' : 
+                           (data.change_6m_percent < 0 ? 'text-danger' : 'text-secondary');
+        document.getElementById('changePercent').textContent = changeText;
+        document.getElementById('changePercent').className = changeColor;
+        
+        const trendBadge = document.getElementById('trendBadge');
+        trendBadge.textContent = data.trend_label;
+        trendBadge.className = 'badge bg-' + data.trend_color;
+        
+        document.getElementById('monthlySlope').textContent = 
+            Math.round(data.monthly_slope).toLocaleString('hu-HU');
+        
+        // Render chart
+        renderChart(data);
+        
+        // Show results
+        document.getElementById('resultsDiv').style.display = 'block';
+    }
+    
+    function renderChart(data) {
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        
+        // Destroy previous chart if exists
+        if (trendChart) {
+            trendChart.destroy();
+        }
+        
+        const historicalLabels = data.historical_data.labels;
+        const historicalPrices = data.historical_data.avg_price_per_sqm;
+        const forecastLabels = data.forecast_data.labels;
+        const forecastPrices = data.forecast_data.predictions;
+        
+        // Combine labels
+        const allLabels = [...historicalLabels, ...forecastLabels];
+        
+        // Create datasets
+        const datasets = [
+            {
+                label: 'Historikus átlagár',
+                data: historicalPrices.concat(Array(forecastLabels.length).fill(null)),
+                borderColor: 'rgb(75, 192, 192)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.1,
+                fill: true
+            },
+            {
+                label: 'Előrejelzés (6 hónap)',
+                data: Array(historicalLabels.length - 1).fill(null)
+                    .concat([historicalPrices[historicalPrices.length - 1]])
+                    .concat(forecastPrices),
+                borderColor: 'rgb(255, 99, 132)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderDash: [5, 5],
+                tension: 0.1,
+                fill: false
+            }
+        ];
+        
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: allLabels,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Négyzetméterár alakulása és előrejelzés (Ft/m²)'
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += Math.round(context.parsed.y).toLocaleString('hu-HU') + ' Ft/m²';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            callback: function(value) {
+                                return Math.round(value).toLocaleString('hu-HU') + ' Ft';
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Időpont (év-hónap)'
+                        }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Statisztika{% endblock %}
+{% block content %}
+<div class="mt-3">
+    <h1>Feldolgozási Statisztika</h1>
+    <div class="row mt-4">
+        <div class="col-md-4">
+            <div class="card text-white bg-success mb-3">
+                <a href="{{ url_for('detailed_stats') }}" class="text-white text-decoration-none">
+                    <div class="card-header">Releváns Hirdetések</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ stats.relevant_count|int }} db</h5>
+                        <p class="card-text"><small>Kattints a részletekért</small></p>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-danger mb-3">
+                <a href="{{ url_for('detailed_stats_irrelevant') }}" class="text-white text-decoration-none">
+                    <div class="card-header">Irreleváns Hirdetések</div>
+                    <div class="card-body">
+                        <h5 class="card-title">{{ stats.irrelevant_count|int }} db</h5>
+                        <p class="card-text"><small>Kattints a részletekért</small></p>
+                    </div>
+                </a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-dark bg-light mb-3">
+                <div class="card-header">Összes Feldolgozott Hirdetés</div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ stats.total_count|int }} db</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

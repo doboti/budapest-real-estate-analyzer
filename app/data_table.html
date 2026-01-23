@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Adatbázis{% endblock %}
+{% block content %}
+<div class="mt-3">
+    <h1>Hirdetések Adatbázisa</h1>
+    <div class="table-responsive">
+        {% for table in tables %}
+            {{ table|safe }}
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

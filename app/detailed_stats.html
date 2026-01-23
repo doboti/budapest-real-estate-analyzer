@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Részletes {{ data_type|default('Releváns') }} Statisztikák{% endblock %}
+{% block content %}
+<div class="mt-3">
+    <h1>Részletes {{ data_type|default('Releváns') }} Statisztikák</h1>
+    {% if stats_table %}
+        <div class="table-responsive">
+            {{ stats_table|safe }}
+        </div>
+    {% else %}
+        <p>Nincs elérhető statisztika.</p>
+    {% endif %}
+    <a href="{{ url_for('stats') }}" class="btn btn-primary mt-3">Vissza a statisztikákhoz</a>
+</div>
+{% endblock %}

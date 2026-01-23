@@ -1,0 +1,21 @@
+pandas
+pyarrow
+ollama
+numpy
+tqdm
+Flask
+duckdb
+folium
+scikit-learn
+xgboost
+# Aszinkron feldolgozás és háttérfeladatok
+rq
+redis
+flask-socketio
+aiohttp
+asyncio
+# Adatvalidáció
+pydantic
+pandera
+# Progress tracking
+uuid

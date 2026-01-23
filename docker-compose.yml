@@ -1,0 +1,71 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_GPU_LAYERS=all
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  app:
+    build: .
+    ports:
+      - "5001:5001"
+    depends_on:
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    volumes:
+      - .:/workspace
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: ["python", "/workspace/app/webapp.py"]
+
+  worker:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    volumes:
+      - .:/workspace
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: ["python", "/workspace/app/start_worker.py"]
+    deploy:
+      replicas: 2  # 2 párhuzamos worker
+
+volumes:
+  redis_data:
+  ollama_data:

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Lekérdezés{% endblock %}
+{% block content %}
+<div class="mt-3">
+    <h1>Adatlekérdezés</h1>
+    <p class="text-muted">Válassz a lekérdezési módok között</p>
+    
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs" id="queryTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat" type="button" role="tab" aria-controls="chat" aria-selected="true">
+                💬 Chat (Természetes nyelv)
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="sql-tab" data-bs-toggle="tab" data-bs-target="#sql" type="button" role="tab" aria-controls="sql" aria-selected="false">
+                🗄️ SQL Lekérdező
+            </button>
+        </li>
+    </ul>
+    
+    <!-- Tab content -->
+    <div class="tab-content border border-top-0 p-4" id="queryTabsContent">
+        <!-- Chat Tab -->
+        <div class="tab-pane fade show active" id="chat" role="tabpanel" aria-labelledby="chat-tab">
+            <h4>Kérdezz az adatokról természetes nyelven!</h4>
+            <p class="text-muted">Példák: "Hány aktív hirdetés van jelenleg a VI. kerületben?", "Mi az átlagár a II. kerületben?", "Hány hirdetést adtak fel decemberben?"</p>
+            <div class="alert alert-info mb-3">
+                <small><strong>🤖 LLM:</strong> llama3.2:3b (Ollama) | Természetes nyelvi SQL generálás és válaszok</small>
+            </div>
+            
+            <form id="chatForm">
+                <div class="mb-3">
+                    <label for="chatQuestion" class="form-label">Kérdésed:</label>
+                    <input type="text" class="form-control" id="chatQuestion" name="question" placeholder="pl. Hány aktív hirdetés van a VI. kerületben?" required>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <span id="chatSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    Kérdezz!
+                </button>
+            </form>
+            
+            <!-- Válasz megjelenítése -->
+            <div id="chatAnswer" class="mt-4 d-none">
+                <div class="alert alert-success">
+                    <h5>Válasz:</h5>
+                    <p id="answerText"></p>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <strong>Generált SQL:</strong>
+                    </div>
+                    <div class="card-body">
+                        <code id="sqlQuery" class="d-block bg-light p-2"></code>
+                    </div>
+                </div>
+                
+                <div class="mt-3">
+                    <h5>Eredmények:</h5>
+                    <div class="table-responsive" id="chatResults"></div>
+                </div>
+            </div>
+            
+            <!-- Hiba megjelenítése -->
+            <div id="chatError" class="alert alert-danger mt-4 d-none"></div>
+        </div>
+        
+        <!-- SQL Tab -->
+        <div class="tab-pane fade" id="sql" role="tabpanel" aria-labelledby="sql-tab">
+            <h4>Futtass SQL lekérdezést</h4>
+            <p class="text-muted">Írd meg a saját SQL SELECT utasításodat a <code>relevant_data</code> táblára.</p>
+            
+            <form method="POST" action="{{ url_for('sql_query') }}">
+                <div class="mb-3">
+                    <label for="sqlQuery" class="form-label">SQL Lekérdezés:</label>
+                    <textarea class="form-control" id="sqlQueryInput" name="query" rows="6" required>SELECT district, COUNT(*) as count FROM relevant_data GROUP BY district ORDER BY count DESC;</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Lekérdezés futtatása</button>
+            </form>
+            
+            <div class="mt-4">
+                <h5>Elérhető oszlopok:</h5>
+                <p class="text-muted small">article_id, title, price_huf, price_eur, rooms, area_sqm, price_per_sqm, description, district, valid_from, valid_till, floor, street, building_type, property_category, has_terrace</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('chatForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const spinner = document.getElementById('chatSpinner');
+    const answerDiv = document.getElementById('chatAnswer');
+    const errorDiv = document.getElementById('chatError');
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    
+    // Reset
+    answerDiv.classList.add('d-none');
+    errorDiv.classList.add('d-none');
+    spinner.classList.remove('d-none');
+    submitBtn.disabled = true;
+    
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/chat-query', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            // Válasz megjelenítése
+            document.getElementById('answerText').textContent = data.answer;
+            document.getElementById('sqlQuery').textContent = data.sql_query;
+            document.getElementById('chatResults').innerHTML = data.results_html;
+            answerDiv.classList.remove('d-none');
+        } else {
+            errorDiv.textContent = data.error || 'Hiba történt a lekérdezés során.';
+            errorDiv.classList.remove('d-none');
+        }
+    } catch (error) {
+        errorDiv.textContent = 'Hálózati hiba: ' + error.message;
+        errorDiv.classList.remove('d-none');
+    } finally {
+        spinner.classList.add('d-none');
+        submitBtn.disabled = false;
+    }
+});
+</script>
+{% endblock %}
