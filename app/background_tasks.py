@@ -814,7 +814,7 @@ def process_data_async(task_id: str, *args, **kwargs):
         )
         task_manager.mark_completed(
             task_id, 
-            f"✅ Kétfázisú feldolgozás kész! Worker szűrt: {worker_filtered_count}, LLM elemzett: {llm_processed_count}, Releváns: {relevant_count}"
+            f"✅ Kétfázisú feldolgozás kész! Worker szűrt: {worker_filtered_count}, LLM elemzett: {llm_processed_count}, Releváns: {final_relevant_count}"
         )
         
     except Exception as e:
@@ -919,9 +919,14 @@ def save_results(results: List[Dict], input_file_path: str = INPUT_FILE):
         print(f"📝 Human feedback CSV készítése - {len(results)} cikk feldolgozása...", flush=True)
         feedback_data = []
         for result in results:
-            article_id = result['article_id']
-            description = result.get('description', '')[:500]  # Első 500 karakter
-            relevant = result['relevant']
+            if result is None:
+                print(f"⚠️ None result found, skipping...", flush=True)
+                continue
+                
+            article_id = result.get('article_id', 'unknown')
+            description = result.get('description') or ''  # Handle None
+            description = description[:500] if description else ''  # Első 500 karakter
+            relevant = result.get('relevant', False)
             reason = result.get('reason', '')
             filtered_by = result.get('filtered_by', 'unknown')
             
