@@ -93,9 +93,6 @@ DEFINITELY_IRRELEVANT_KEYWORDS = {
     "bérleti jog": "Bérleti jog (nem eladás)",
     "önkormányzati": "Önkormányzati tulajdon",
     "nyaraló": "Ingatlan típusa: Nyaraló",
-    "ikerház": "Ingatlan típusa: Ikerház",
-    "családi ház": "Ingatlan típusa: Családi ház",
-    "csak készpénz": "Csak készpénzes vevő (jogi kockázat)",
 }
 
 LIKELY_IRRELEVANT_KEYWORDS = {
