@@ -844,12 +844,11 @@ def save_results(results: List[Dict], input_file_path: str = INPUT_FILE):
     Feldolgozási eredmények mentése + Human feedback CSV.
     Streaming módban dolgozik - nem tölti be a teljes eredeti DataFrame-et.
     """
-    try:
-        print(f"💾 save_results kezdése - {len(results)} eredmény feldolgozása", flush=True)
-        
-        # Releváns és irreleváns eredmények szétválasztása
-        relevant_results = [r for r in results if r['relevant']]
-        irrelevant_results = [r for r in results if not r['relevant']]
+    print(f"💾 save_results kezdése - {len(results)} eredmény feldolgozása", flush=True)
+    
+    # Releváns és irreleváns eredmények szétválasztása
+    relevant_results = [r for r in results if r['relevant']]
+    irrelevant_results = [r for r in results if not r['relevant']]
     
     # 🔄 Streaming: csak a feldolgozott article_id-kat keressük meg
     processed_ids = set(r['article_id'] for r in results)
