@@ -844,9 +844,12 @@ def save_results(results: List[Dict], input_file_path: str = INPUT_FILE):
     Feldolgozási eredmények mentése + Human feedback CSV.
     Streaming módban dolgozik - nem tölti be a teljes eredeti DataFrame-et.
     """
-    # Releváns és irreleváns eredmények szétválasztása
-    relevant_results = [r for r in results if r['relevant']]
-    irrelevant_results = [r for r in results if not r['relevant']]
+    try:
+        print(f"💾 save_results kezdése - {len(results)} eredmény feldolgozása", flush=True)
+        
+        # Releváns és irreleváns eredmények szétválasztása
+        relevant_results = [r for r in results if r['relevant']]
+        irrelevant_results = [r for r in results if not r['relevant']]
     
     # 🔄 Streaming: csak a feldolgozott article_id-kat keressük meg
     processed_ids = set(r['article_id'] for r in results)
@@ -913,41 +916,56 @@ def save_results(results: List[Dict], input_file_path: str = INPUT_FILE):
         print(f"✅ {len(irrelevant_rows)} irreleváns sor mentve", flush=True)
     
     # Human feedback CSV létrehozása
-    feedback_data = []
-    for result in results:
-        article_id = result['article_id']
-        description = result.get('description', '')[:500]  # Első 500 karakter
-        relevant = result['relevant']
-        reason = result.get('reason', '')
-        filtered_by = result.get('filtered_by', 'unknown')
+    try:
+        print(f"📝 Human feedback CSV készítése - {len(results)} cikk feldolgozása...", flush=True)
+        feedback_data = []
+        for result in results:
+            article_id = result['article_id']
+            description = result.get('description', '')[:500]  # Első 500 karakter
+            relevant = result['relevant']
+            reason = result.get('reason', '')
+            filtered_by = result.get('filtered_by', 'unknown')
+            
+            feedback_data.append({
+                'article_id': article_id,
+                'description_preview': description,
+                'llm_relevant': relevant,
+                'llm_reason': reason,
+                'filtered_by': filtered_by,
+                'human_feedback': ''  # Üres oszlop human feedback-hez
+            })
         
-        feedback_data.append({
-            'article_id': article_id,
-            'description_preview': description,
-            'llm_relevant': relevant,
-            'llm_reason': reason,
-            'filtered_by': filtered_by,
-            'human_feedback': ''  # Üres oszlop human feedback-hez
-        })
+        print(f"📝 {len(feedback_data)} feedback bejegyzés előkészítve", flush=True)
+        
+        # Human feedback CSV mentése
+        feedback_df = pd.DataFrame(feedback_data)
+        feedback_csv_path = '/workspace/human_feedback.csv'
+        
+        # Ha már létezik, hozzáfűzés
+        if os.path.exists(feedback_csv_path):
+            existing_df = pd.read_csv(feedback_csv_path)
+            # Duplikátum elkerülése: csak azok amelyek még nincsenek benne
+            existing_ids = set(existing_df['article_id'].values)
+            new_feedback = feedback_df[~feedback_df['article_id'].isin(existing_ids)]
+            if len(new_feedback) > 0:
+                combined_df = pd.concat([existing_df, new_feedback], ignore_index=True)
+                combined_df.to_csv(feedback_csv_path, index=False)
+                print(f"📝 Human feedback CSV frissítve: +{len(new_feedback)} új cikk (össz: {len(combined_df)})", flush=True)
+            else:
+                print(f"📝 Human feedback CSV már naprakész (nincs új cikk)", flush=True)
+        else:
+            feedback_df.to_csv(feedback_csv_path, index=False)
+            print(f"📝 Human feedback CSV létrehozva: {len(feedback_data)} cikk - {feedback_csv_path}", flush=True)
     
-    # Human feedback CSV mentése
-    feedback_df = pd.DataFrame(feedback_data)
-    feedback_csv_path = '/workspace/human_feedback.csv'
-    
-    # Ha már létezik, hozzáfűzés
-    if os.path.exists(feedback_csv_path):
-        existing_df = pd.read_csv(feedback_csv_path)
-        # Duplikátum elkerülése: csak azok amelyek még nincsenek benne
-        existing_ids = set(existing_df['article_id'].values)
-        new_feedback = feedback_df[~feedback_df['article_id'].isin(existing_ids)]
-        if len(new_feedback) > 0:
-            combined_df = pd.concat([existing_df, new_feedback], ignore_index=True)
-            combined_df.to_csv(feedback_csv_path, index=False)
-            print(f"📝 Human feedback CSV frissítve: +{len(new_feedback)} új cikk", flush=True)
-    else:
-        feedback_df.to_csv(feedback_csv_path, index=False)
-        print(f"📝 Human feedback CSV létrehozva: {len(feedback_data)} cikk", flush=True)
+    except Exception as e:
+        print(f"❌ HIBA a human feedback CSV létrehozásánál: {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
     
     # Log fájl frissítése
-    log_df = pd.DataFrame(results)
-    log_df.to_csv(LOG_FILE, index=False)
+    try:
+        log_df = pd.DataFrame(results)
+        log_df.to_csv(LOG_FILE, index=False)
+        print(f"📊 LLM decisions log frissítve: {len(results)} bejegyzés", flush=True)
+    except Exception as e:
+        print(f"❌ HIBA a log fájl frissítésénél: {str(e)}", flush=True)
