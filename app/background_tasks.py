@@ -566,6 +566,11 @@ def process_data_async(task_id: str, *args, **kwargs):
         total_articles = len(all_unique_articles)  # Összes unique cikk
         articles_to_process = unique_articles  # Csak új/módosult
         
+        # 🧪 TESZT MÓD: Csak első N hirdetést feldolgozni
+        if TEST_MODE:
+            print(f"🧪 TESZT MÓD AKTÍV: Csak első {TEST_LIMIT} hirdetést dolgozunk fel", flush=True)
+            articles_to_process = articles_to_process.head(TEST_LIMIT)
+        
         total_to_process = len(articles_to_process)
         already_processed = len(existing_processed)
         
@@ -910,25 +915,25 @@ def save_results(results: List[Dict], input_file_path: str = INPUT_FILE):
         
         print(f"📝 {len(feedback_data)} feedback bejegyzés előkészítve", flush=True)
         
-        # Human feedback CSV mentése
+        # Human feedback XLSX mentése (szerkeszthető Excel formátum)
         feedback_df = pd.DataFrame(feedback_data)
-        feedback_csv_path = '/workspace/human_feedback.csv'
+        feedback_xlsx_path = '/workspace/human_feedback.xlsx'
         
         # Ha már létezik, hozzáfűzés
-        if os.path.exists(feedback_csv_path):
-            existing_df = pd.read_csv(feedback_csv_path)
+        if os.path.exists(feedback_xlsx_path):
+            existing_df = pd.read_excel(feedback_xlsx_path, engine='openpyxl')
             # Duplikátum elkerülése: csak azok amelyek még nincsenek benne
             existing_ids = set(existing_df['article_id'].values)
             new_feedback = feedback_df[~feedback_df['article_id'].isin(existing_ids)]
             if len(new_feedback) > 0:
                 combined_df = pd.concat([existing_df, new_feedback], ignore_index=True)
-                combined_df.to_csv(feedback_csv_path, index=False)
-                print(f"📝 Human feedback CSV frissítve: +{len(new_feedback)} új cikk (össz: {len(combined_df)})", flush=True)
+                combined_df.to_excel(feedback_xlsx_path, index=False, engine='openpyxl')
+                print(f"📝 Human feedback XLSX frissítve: +{len(new_feedback)} új cikk (össz: {len(combined_df)})", flush=True)
             else:
-                print(f"📝 Human feedback CSV már naprakész (nincs új cikk)", flush=True)
+                print(f"📝 Human feedback XLSX már naprakész (nincs új cikk)", flush=True)
         else:
-            feedback_df.to_csv(feedback_csv_path, index=False)
-            print(f"📝 Human feedback CSV létrehozva: {len(feedback_data)} cikk - {feedback_csv_path}", flush=True)
+            feedback_df.to_excel(feedback_xlsx_path, index=False, engine='openpyxl')
+            print(f"📝 Human feedback XLSX létrehozva: {len(feedback_data)} cikk - {feedback_xlsx_path}", flush=True)
     
     except Exception as e:
         print(f"❌ HIBA a human feedback CSV létrehozásánál: {str(e)}", flush=True)

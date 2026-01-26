@@ -8,6 +8,7 @@ duckdb
 folium
 scikit-learn
 xgboost
+openpyxl  # Excel fájlok írásához/olvasásához
 # Aszinkron feldolgozás és háttérfeladatok
 rq
 redis
