@@ -687,75 +687,23 @@ def process_data_async(task_id: str, *args, **kwargs):
         print(f"   LLM elemzésre vár: {len(articles_for_llm)}", flush=True)
         
         # ============ 2. FÁZIS: LLM FELDOLGOZÁS BATCH-EKBEN (LASSÚ, PÁRHUZAMOS) ============
-        print(f"🚀 2. FÁZIS: Batch LLM elemzés kezdése ({len(articles_for_llm)} cikk, 3-as batch-ekben)...", flush=True)
+        print(f"🚀 2. FÁZIS: LLM elemzés kezdése ({len(articles_for_llm)} cikk, egyenként)...", flush=True)
         
         llm_results = []
         llm_processed_count = 0
         llm_relevant_count = 0
         
         if len(articles_for_llm) > 0:
-            # Batch-ek készítése (3-as csoportok)
-            batches = []
-            for i in range(0, len(articles_for_llm), 3):
-                batch = articles_for_llm[i:i+3]
-                
-                # Ha az utolsó batch kevesebb mint 3 elem, kiegészítjük vagy egyenként dolgozzuk fel
-                if len(batch) == 3:
-                    batches.append(batch)
-                else:
-                    # Utolsó részleges batch egyenkénti feldolgozással
-                    for article in batch:
-                        individual_result = process_article_with_llm(article)
-                        llm_results.append(individual_result)
-                        llm_processed_count += 1
-                        if individual_result['relevant']:
-                            llm_relevant_count += 1
+            # BATCH PROCESSING KIKAPCSOLVA - egyenként dolgozzuk fel
+            # A batch processing keveri össze a cikkeket (confusion)
+            for article in articles_for_llm:
+                individual_result = process_article_with_llm(article)
+                llm_results.append(individual_result)
+                llm_processed_count += 1
+                if individual_result['relevant']:
+                    llm_relevant_count += 1
             
-            print(f"   Batch-ek száma: {len(batches)}, Egyedi cikkek: {len(articles_for_llm) % 3}", flush=True)
-            
-            # Batch-ek feldolgozása párhuzamosan
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                batch_futures = [
-                    executor.submit(get_batch_llm_decision, batch)
-                    for batch in batches
-                ]
-                
-                for future in as_completed(batch_futures):
-                    try:
-                        batch_results = future.result()  # List of 3 results
-                        
-                        # Batch eredmények feldolgozása
-                        for i, result in enumerate(batch_results):
-                            # Eredeti article adatok hozzáadása
-                            batch_idx = llm_processed_count // 3
-                            article_idx = llm_processed_count % 3
-                            
-                            if batch_idx < len(batches):
-                                original_article = batches[batch_idx][article_idx]
-                                enhanced_result = {
-                                    'article_id': result.get('id', original_article['article_id']),
-                                    'relevant': result.get('relevant', False),
-                                    'reason': f"Batch LLM elemzés: {result.get('reason', 'Nincs indoklás')}",
-                                    'description': original_article.get('description', ''),
-                                    'filtered_by': 'llm_batch',
-                                    'floor': result.get('floor'),
-                                    'street': result.get('street'),
-                                    'building_type': result.get('building_type'),
-                                    'property_category': result.get('property_category'),
-                                    'has_terrace': result.get('has_terrace')
-                                }
-                                llm_results.append(enhanced_result)
-                            
-                            llm_processed_count += 1
-                            if result.get('relevant', False):
-                                llm_relevant_count += 1
-                        
-                        # Progress: 2. fázis 50-100%
-                        phase2_progress = 50.0 + (llm_processed_count / len(articles_for_llm)) * 50.0
-                        
-                        # Összes statisztika számolása (worker + llm)
-                        # Worker eredmények: worker_relevant_count (releváns) + worker_filtered_count (irreleváns) 
-                        # LLM eredmények: llm_relevant_count (releváns) + (llm_processed_count - llm_relevant_count) (irreleváns)
+            print(f"   Egyenként feldolgozva: {llm_processed_count} cikk", flush=True)
                         total_processed = already_processed + len(worker_results) + llm_processed_count
                         total_relevant = worker_relevant_count + llm_relevant_count
                         total_irrelevant = worker_filtered_count + (llm_processed_count - llm_relevant_count)
