@@ -704,26 +704,6 @@ def process_data_async(task_id: str, *args, **kwargs):
                     llm_relevant_count += 1
             
             print(f"   Egyenként feldolgozva: {llm_processed_count} cikk", flush=True)
-                        total_processed = already_processed + len(worker_results) + llm_processed_count
-                        total_relevant = worker_relevant_count + llm_relevant_count
-                        total_irrelevant = worker_filtered_count + (llm_processed_count - llm_relevant_count)
-                        
-                        print(f"🔢 Statisztika: Worker releváns={worker_relevant_count}, Worker irreleváns={worker_filtered_count}, LLM releváns={llm_relevant_count}, LLM irreleváns={llm_processed_count - llm_relevant_count}", flush=True)
-                        
-                        # Gyakoribb frissítés: minden batch után (minden 3 cikk után)
-                        if llm_processed_count > 0:  # Minden batch után frissítünk
-                            print(f"📊 2. fázis Progress frissítés: {phase2_progress:.1f}% - Batch {llm_processed_count}/{len(articles_for_llm)} | Releváns: {total_relevant}, Irreleváns: {total_irrelevant}", flush=True)
-                            task_manager.update_progress(
-                                task_id, phase2_progress,
-                                f"2. fázis - Batch LLM elemzés: {llm_processed_count}/{len(articles_for_llm)}",
-                                processed_items=total_processed,
-                                relevant_found=total_relevant,
-                                irrelevant_found=total_irrelevant,
-                                total_items=total_articles
-                            )
-                        
-                    except Exception as e:
-                        print(f"❌ Batch LLM feldolgozási hiba: {e}", flush=True)
         
         # Eredmények egyesítése
         all_results = worker_results + llm_results
