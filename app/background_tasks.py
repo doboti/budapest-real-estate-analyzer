@@ -39,55 +39,87 @@ TEST_LIMIT = 100
 
 # Batch LLM feldolgozáshoz (3 cikk egyszerre)
 BATCH_PROMPT_TEMPLATE = """
-Elemezd az alábbi {count} budapesti ingatlanhirdetést lakásvásárlás szempontjából:
+Elemezd az alábbi {count} KÜLÖNBÖZŐ budapesti ingatlanhirdetést EGYENKÉNT, KÜLÖN-KÜLÖN értékelve őket.
+
+FONTOS: Minden cikket ÖNÁLLÓAN értékelj! NE keverd össze a cikkeket egymással!
 
 CIKK #1:
 ID: {id_1}
-Leírás: {desc_1}
+Cím/Leírás: {desc_1}
 
 CIKK #2:
 ID: {id_2} 
-Leírás: {desc_2}
+Cím/Leírás: {desc_2}
 
 CIKK #3:
 ID: {id_3}
-Leírás: {desc_3}
+Cím/Leírás: {desc_3}
 
-Szempontok:
-- Releváns: Normál lakás/albérlet Budapesten, fővárosban lakásvevőknek érdekes
-- Irreleváns: Tulajdoni hányad, nyaraló, családi ház, ikerház, kerülendő konstrukciók
+ÉRTÉKELÉSI SZEMPONTOK minden cikk esetén:
 
-VÁLASZFORMÁTUM (JSON array, pontosan 3 elem):
+RELEVÁNS: Normál lakás/társasházi lakás Budapesten (fővárosban lakásvevőknek érdekes)
+- Társasházi lakás ✓
+- Panellakás ✓  
+- Téglalakás ✓
+- Garzonlakás ✓
+
+IRRELEVÁNS: 
+- Ikerház, családi ház, sorház, villa ✗
+- Nyaraló, hétvégi ház ✗
+- Telek, garázs, üzlethelyiség ✗
+- Tulajdoni hányad, osztatlan közös (törtszámmal) ✗
+- Haszonélvezet, bérleti jog ✗
+- Önkormányzati ingatlan ✗
+
+FIGYELEM rövid leírásokra:
+- Ha a leírás rövid vagy hiányos → nézd meg a címet is!
+- Ha "panellakás" szerepel → RELEVÁNS
+- Ha "téglalakás" szerepel → RELEVÁNS
+- Ha "ikerház", "családi ház" szerepel → IRRELEVÁNS
+
+VÁLASZFORMÁTUM (JSON array, pontosan {count} elem, SZIGORÚAN ebben a sorrendben):
 [
-  {{"id": "{id_1}", "relevant": true, "reason": "rövid indoklás", "floor": null, "street": null, "building_type": null, "property_category": null, "has_terrace": null}},
-  {{"id": "{id_2}", "relevant": false, "reason": "rövid indoklás", "floor": null, "street": null, "building_type": null, "property_category": null, "has_terrace": null}},
-  {{"id": "{id_3}", "relevant": true, "reason": "rövid indoklás", "floor": null, "street": null, "building_type": null, "property_category": null, "has_terrace": null}}
+  {{"id": "{id_1}", "relevant": true_vagy_false, "reason": "rövid indoklás CSAK erről a cikkről"}},
+  {{"id": "{id_2}", "relevant": true_vagy_false, "reason": "rövid indoklás CSAK erről a cikkről"}},
+  {{"id": "{id_3}", "relevant": true_vagy_false, "reason": "rövid indoklás CSAK erről a cikkről"}}
 ]
+
+KRITIKUS: Minden cikket a SAJÁT ID-jával és SAJÁT leírása alapján értékelj! Ne használj más cikk adatait!
 """
 
 # Egyedi cikk feldolgozáshoz (fallback)
 PROMPT_TEMPLATE = """
-Feladat: Ingatlanleírás alapján döntsd el a relevanciát és nyerd ki a strukturált adatokat.
-Alapértelmezés: Az ingatlan releváns (true), kivéve, ha kizáró okot találsz.
+Elemezd ezt a budapesti ingatlanhirdetést lakásvásárlás szempontjából:
 
-Kizáró okok (`relevant: false`):
-- Nem 1/1 tulajdon vagy nem tiszta eladás (pl. osztatlan közös, tulajdoni hányad, bérleti jog, haszonélvezet, önkormányzati, csere).
-- Ingatlan típusa: Kizáró ok, ha nem "lakás", "társasházi lakás", vagy "félszuterén lakás". Például a telek, garázs, nyaraló, ikerház, családi ház NEM releváns.
-- Nem budapesti.
-- "Csak készpénzes vevőknek" (ez gyakran jogi problémát jelez).
+Cím/Leírás: {description}
 
-Strukturált adatok:
-- Emelet (`floor`): Szám (pl. 1, 2). Földszint: 0. Szuterén/félszuterén: -1. Ha nincs info: null.
-- Utca (`street`): Az ingatlan utcaneve (pl. 'Kossuth Lajos utca'). Ha nincs: null.
-- Építési mód (`building_type`): "tegla" ha tégla épület, "panel" ha panelház, "egyeb" ha más (pl. vályog, favázas), null ha nincs info.
-- Ingatlan kategória (`property_category`): "lakas" vagy "haz". A társasházi lakás = "lakas". Ha nincs info: null.
-- Terasz (`has_terrace`): true ha van terasz/erkély/loggia/franciaerkély, false ha nincs vagy nem említi, null ha nem egyértelmű.
+ÉRTÉKELÉSI SZEMPONTOK:
 
-Leírás: {description}
+RELEVÁNS típusok:
+- Lakás, társasházi lakás ✓
+- Panellakás, téglalakás ✓
+- Garzonlakás ✓
 
-Formátum: A válaszod CSAK egy JSON objektum legyen, extra szöveg nélkül.
-Példa: {{"relevant": true, "reason": "", "floor": 1, "street": "Egészségház utca", "building_type": "tegla", "property_category": "lakas", "has_terrace": true}}
-vagy {{"relevant": false, "reason": "Családi ház", "floor": null, "street": null, "building_type": null, "property_category": "haz", "has_terrace": null}}
+IRRELEVÁNS (kizáró okok):
+1. INGATLAN TÍPUSA:
+   - Ikerház, családi ház, sorház, villa ✗
+   - Nyaraló, hétvégi ház, üdülő ✗
+   - Telek, garázs, üzlethelyiség ✗
+
+2. TULAJDONVISZONY:
+   - Töredék-tulajdon (pl. "50%-os tulajdoni hányad", "osztatlan közös 1/2-ed rész") ✗
+   - Teljes tulajdon (100%, 1/1) → RENDBEN VAN ✓
+
+3. KERÜLENDŐ:
+   - Haszonélvezet, haszonélvezettel terhelt ✗
+   - Bérleti jog ✗
+   - Önkormányzati ingatlan ✗
+   - Ingatlancsere, cserélhető, cserélném ✗
+
+FONTOS: Ha a leírás rövid vagy hiányos, NE találj ki információt! Csak a megadott adatokat használd.
+
+VÁLASZFORMÁTUM (JSON):
+{{"relevant": true_vagy_false, "reason": "rövid indoklás", "floor": null, "street": null, "building_type": null, "property_category": null, "has_terrace": null}}
 """
 
 # Fejlett szabályalapú szűrés - kétlépcsős megközelítéssel
