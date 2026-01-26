@@ -27,7 +27,7 @@ from connection_pool import get_ollama_session, get_connection_pool_stats
 from incremental_processing import get_incremental_processor
 
 # Constants
-MODEL_NAME = os.getenv('LLM_MODEL', 'phi4')
+MODEL_NAME = os.getenv('LLM_MODEL', 'llama3.2:3b')
 INPUT_FILE = '/workspace/parquet/ingatlan_scrape_budapest_all.parquet'
 OUTPUT_FILE = '/workspace/parquet/ingatlan_filtered_relevant.parquet'
 IRRELEVANT_OUTPUT_FILE = '/workspace/parquet/ingatlan_filtered_irrelevant.parquet'
@@ -512,13 +512,17 @@ def process_data_async(task_id: str, *args, **kwargs):
             print("🆕 Első feldolgozás - minden cikk feldolgozásra kerül", flush=True)
         
         # ML Worker Filter tréning (ha van elég adat)
-        print("🎯 ML Worker Filter inicializálása...", flush=True)
-        ml_trained = train_ml_filter_from_llm_log()
-        if ml_trained:
-            ml_stats = get_ml_filter().get_stats()
-            print(f"✅ ML filter aktív: {ml_stats['relevant_samples']} releváns, {ml_stats['irrelevant_samples']} irreleváns minta", flush=True)
+        # TESZT MÓDBAN KIKAPCSOLVA - ne használja a régi 10k adatokat
+        if not TEST_MODE:
+            print("🎯 ML Worker Filter inicializálása...", flush=True)
+            ml_trained = train_ml_filter_from_llm_log()
+            if ml_trained:
+                ml_stats = get_ml_filter().get_stats()
+                print(f"✅ ML filter aktív: {ml_stats['relevant_samples']} releváns, {ml_stats['irrelevant_samples']} irreleváns minta", flush=True)
+            else:
+                print("⚠️ ML filter inaktív (nincs elég tréningadat)", flush=True)
         else:
-            print("⚠️ ML filter inaktív (nincs elég tréningadat)", flush=True)
+            print("🧪 TESZT MÓD: ML Worker Filter kikapcsolva (ne használja a régi adatokat)", flush=True)
         
         
         task_manager.update_progress(task_id, 0.0, "Feladat indítása...")
