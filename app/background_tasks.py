@@ -449,6 +449,16 @@ def worker_filter_article(row: pd.Series) -> Dict[str, Any]:
             }
     
     # 3. ML-alapú előszűrés (TF-IDF + cosine similarity)
+    # Kivétel: rövid leírásokat (< 100 karakter) bízzuk az LLM-re,
+    # mert az ML-nek nincs elég kontextusa pontos döntéshez
+    if len(description.strip()) < 100:
+        return {
+            'article_id': article_id,
+            'relevant': None,  # Bizonytalan
+            'reason': 'Worker: Rövid leírás - LLM pontos elemzésre vár',
+            'needs_llm': True
+        }
+    
     ml_filter = get_ml_filter()
     if ml_filter.is_trained:
         ml_relevant, ml_confidence, ml_reason = ml_filter.predict(description)
