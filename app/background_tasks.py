@@ -27,11 +27,15 @@ from connection_pool import get_ollama_session, get_connection_pool_stats
 from incremental_processing import get_incremental_processor
 
 # Constants
-INPUT_FILE = '/workspace/core_data.parquet'
-OUTPUT_FILE = '/workspace/core_layer_filtered.parquet'
-IRRELEVANT_OUTPUT_FILE = '/workspace/core_layer_irrelevant.parquet'
+MODEL_NAME = os.getenv('LLM_MODEL', 'phi4')
+INPUT_FILE = '/workspace/parquet/ingatlan_scrape_budapest_all.parquet'
+OUTPUT_FILE = '/workspace/parquet/ingatlan_filtered_relevant.parquet'
+IRRELEVANT_OUTPUT_FILE = '/workspace/parquet/ingatlan_filtered_irrelevant.parquet'
 LOG_FILE = '/workspace/llm_decisions_log.csv'
-MODEL_NAME = 'llama3.2:3b'
+
+# 🧪 TESZT MÓD: Csak első 100 hirdetést dolgozza fel (True = teszt, False = teljes)
+TEST_MODE = True
+TEST_LIMIT = 100
 
 # Batch LLM feldolgozáshoz (3 cikk egyszerre)
 BATCH_PROMPT_TEMPLATE = """
