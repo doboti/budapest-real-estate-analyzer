@@ -348,12 +348,25 @@ def get_batch_llm_decision(articles_batch: List[pd.Series]) -> List[Dict[str, An
     """
     Szinkron wrapper az async_get_batch_llm_decision függvényhez.
     ThreadPoolExecutor-ral történő híváshoz.
-    Persistent connection pool használatával.
+    Minden batch saját session-nel rendelkezik az event loop problémák elkerülésére.
     """
     async def _run():
-        # Persistent session pool használata (újrahasználható connections)
-        session = get_ollama_session()
-        return await async_get_batch_llm_decision(session, articles_batch)
+        # Optimalizált connector minden batch-hez
+        connector = aiohttp.TCPConnector(
+            limit=30,
+            limit_per_host=30,
+            force_close=False,
+            keepalive_timeout=60,
+        )
+        timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=300)
+        
+        # Új session a batch-hez
+        async with aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={'Connection': 'keep-alive'}
+        ) as session:
+            return await async_get_batch_llm_decision(session, articles_batch)
     
     # Új event loop létrehozása a thread-ben
     loop = asyncio.new_event_loop()
@@ -366,12 +379,24 @@ def get_batch_llm_decision(articles_batch: List[pd.Series]) -> List[Dict[str, An
 def get_llm_decision_with_validation(description: str) -> Dict[str, Any]:
     """
     Szinkron wrapper az async_get_llm_decision_with_validation függvényhez.
-    Persistent connection pool használatával.
+    Minden hívás saját session-nel rendelkezik.
     """
     async def _run():
-        # Persistent session pool használata (újrahasználható connections)
-        session = get_ollama_session()
-        return await async_get_llm_decision_with_validation(session, description)
+        # Optimalizált connector
+        connector = aiohttp.TCPConnector(
+            limit=10,
+            force_close=False,
+            keepalive_timeout=60,
+        )
+        timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=300)
+        
+        # Új session
+        async with aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={'Connection': 'keep-alive'}
+        ) as session:
+            return await async_get_llm_decision_with_validation(session, description)
     
     # Új event loop létrehozása a thread-ben
     loop = asyncio.new_event_loop()
