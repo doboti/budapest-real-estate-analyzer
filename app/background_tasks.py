@@ -28,9 +28,9 @@ from incremental_processing import get_incremental_processor
 
 # Constants
 MODEL_NAME = os.getenv('LLM_MODEL', 'llama3.2:3b')
-INPUT_FILE = '/workspace/parquet/ingatlan_scrape_budapest_all.parquet'
-OUTPUT_FILE = '/workspace/parquet/ingatlan_filtered_relevant.parquet'
-IRRELEVANT_OUTPUT_FILE = '/workspace/parquet/ingatlan_filtered_irrelevant.parquet'
+INPUT_FILE = '/workspace/core_data.parquet'
+OUTPUT_FILE = '/workspace/parquet/core_layer_filtered.parquet'
+IRRELEVANT_OUTPUT_FILE = '/workspace/parquet/core_layer_irrelevant.parquet'
 LOG_FILE = '/workspace/llm_decisions_log.csv'
 
 # 🧪 TESZT MÓD: Csak első 100 hirdetést dolgozza fel (True = teszt, False = teljes)
