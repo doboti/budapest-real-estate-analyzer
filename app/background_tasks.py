@@ -389,32 +389,31 @@ def worker_filter_article(row: pd.Series) -> Dict[str, Any]:
                     'needs_llm': False
                 }
     
-    # 3. ML-alapú előszűrés (TF-IDF + cosine similarity)
-    # Kivétel: rövid leírásokat (< 100 karakter) bízzuk az LLM-re,
-    # mert az ML-nek nincs elég kontextusa pontos döntéshez
-    if len(description.strip()) < 100:
-        return {
-            'article_id': article_id,
-            'relevant': None,  # Bizonytalan
-            'reason': 'Worker: Rövid leírás - LLM pontos elemzésre vár',
-            'needs_llm': True
-        }
+    # 3. ML-alapú előszűrés KIKAPCSOLVA TESZT MÓDBAN
+    # Csak a kulcsszavas szűrésre koncentrálunk
+    # if len(description.strip()) < 100:
+    #     return {
+    #         'article_id': article_id,
+    #         'relevant': None,  # Bizonytalan
+    #         'reason': 'Worker: Rövid leírás - LLM pontos elemzésre vár',
+    #         'needs_llm': True
+    #     }
+    # 
+    # ml_filter = get_ml_filter()
+    # if ml_filter.is_trained:
+    #     ml_relevant, ml_confidence, ml_reason = ml_filter.predict(description)
+    #     
+    #     # Ha ML magabiztosan döntött → használjuk
+    #     if ml_relevant is not None:
+    #         return {
+    #             'article_id': article_id,
+    #             'relevant': ml_relevant,
+    #             'reason': f'Worker ML szűrés: {ml_reason}',
+    #             'needs_llm': False
+    #         }
+    #     # ML bizonytalan → LLM-re bízza
     
-    ml_filter = get_ml_filter()
-    if ml_filter.is_trained:
-        ml_relevant, ml_confidence, ml_reason = ml_filter.predict(description)
-        
-        # Ha ML magabiztosan döntött → használjuk
-        if ml_relevant is not None:
-            return {
-                'article_id': article_id,
-                'relevant': ml_relevant,
-                'reason': f'Worker ML szűrés: {ml_reason}',
-                'needs_llm': False
-            }
-        # ML bizonytalan → LLM-re bízza
-    
-    # 4. Ha sem kulcsszó, sem ML nem döntött → LLM-re bízza
+    # 4. Ha kulcsszavas szűrés nem döntött → LLM-re bízza
     return {
         'article_id': article_id,
         'relevant': None,  # Bizonytalan
