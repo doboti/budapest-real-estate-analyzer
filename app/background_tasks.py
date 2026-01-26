@@ -92,14 +92,12 @@ DEFINITELY_IRRELEVANT_KEYWORDS = {
     "tulajdoni hányad": "Tulajdoni hányad", 
     "bérleti jog": "Bérleti jog (nem eladás)",
     "önkormányzati": "Önkormányzati tulajdon",
-    "nyaraló": "Ingatlan típusa: Nyaraló",
+    "csere": "Csere (nem eladás)",
+    "haszonélvezet": "Haszonélvezet",
 }
 
 LIKELY_IRRELEVANT_KEYWORDS = {
-    "üzlethelyiség": "Ingatlan típusa: Üzlethelyiség",
-    "iroda": "Ingatlan típusa: Iroda",
-    "csere": "Csere (nem eladás)",
-    "haszonélvezet": "Haszonélvezet",
+    # Üres - minden más ingatlan típus engedélyezett (ikerház, családi ház, üzlet, iroda, nyaraló)
 }
 
 NEGATION_KEYWORDS = ["tehermentes", "nincs haszonélvezet", "törölve", "megszüntetve"]
