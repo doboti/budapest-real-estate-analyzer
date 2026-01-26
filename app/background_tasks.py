@@ -92,14 +92,14 @@ vagy {{"relevant": false, "reason": "Családi ház", "floor": null, "street": nu
 
 # Fejlett szabályalapú szűrés - kétlépcsős megközelítéssel
 DEFINITELY_IRRELEVANT_KEYWORDS = {
-    "osztatlan közös": "Osztatlan közös tulajdon",
     "tulajdoni hányad": "Tulajdoni hányad", 
     "bérleti jog": "Bérleti jog (nem eladás)",
-    "önkormányzati": "Önkormányzati tulajdon",
+    "önkormányzati ingatlan": "Önkormányzati ingatlan",
     "ingatlancsere": "Ingatlancsere (nem eladás)",
     "cserélhető": "Csere (nem eladás)",
     "cserélném": "Csere (nem eladás)",
     "haszonélvezet": "Haszonélvezet",
+    "haszonélvezettel": "Haszonélvezet",
 }
 
 LIKELY_IRRELEVANT_KEYWORDS = {
@@ -369,6 +369,18 @@ def worker_filter_article(row: pd.Series) -> Dict[str, Any]:
     
     # 2. Kulcsszavas előszűrés → azonnal irreleváns  
     combined_text = f"{title} {description}".lower()
+    
+    # Speciális eset: osztatlan közös tulajdon CSAK ha törtszámmal (x/y rész)
+    # Példa: "osztatlan közös tulajdon 475/1000-d része" → SZŰR
+    # De: "osztatlan közös kertrész" → NEM SZŰR (releváns)
+    osztatlan_pattern = r'osztatlan közös tulajdon.*?\d+/\d+'
+    if re.search(osztatlan_pattern, combined_text):
+        return {
+            'article_id': article_id,
+            'relevant': False,
+            'reason': 'Worker előszűrés: Osztatlan közös tulajdon (törtszám)',
+            'needs_llm': False
+        }
     
     # Egyértelmű kizáró kulcsszavak
     for keyword, reason in DEFINITELY_IRRELEVANT_KEYWORDS.items():
