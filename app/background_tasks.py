@@ -96,7 +96,8 @@ DEFINITELY_IRRELEVANT_KEYWORDS = {
     "tulajdoni hányad": "Tulajdoni hányad", 
     "bérleti jog": "Bérleti jog (nem eladás)",
     "önkormányzati": "Önkormányzati tulajdon",
-    "csere": "Csere (nem eladás)",
+    "ingatlancsere": "Ingatlancsere (nem eladás)",
+    "cserélhető": "Csere (nem eladás)",
     "haszonélvezet": "Haszonélvezet",
 }
 
