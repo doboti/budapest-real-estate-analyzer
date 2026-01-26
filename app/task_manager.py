@@ -198,7 +198,7 @@ def enqueue_data_processing_task(task_id: str) -> str:
     job = task_queue.enqueue(
         'background_tasks.process_data_async',
         task_id,
-        job_timeout='30m',  # 30 perces timeout
+        job_timeout='2h',  # 2 órás timeout (nagy adathalmazokhoz)
         job_id=task_id
     )
     return job.id
