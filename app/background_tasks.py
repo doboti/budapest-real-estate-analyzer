@@ -55,8 +55,8 @@ ID: {id_3}
 Leírás: {desc_3}
 
 Szempontok:
-- Releváns: Normál lakás/albérlet Budapesten, fővárosban lakásvevőknek érdekes
-- Irreleváns: Tulajdoni hányad, nyaraló, családi ház, ikerház, kerülendő konstrukciók
+- Releváns: Lakás, társasházi lakás, családi ház, ikerház Budapesten - fővárosban lakásvevőknek érdekes
+- Irreleváns: Tulajdoni hányad, nyaraló, telek, garázs, üzlethelyiség, kerülendő konstrukciók
 
 VÁLASZFORMÁTUM (JSON array, pontosan 3 elem):
 [
@@ -73,7 +73,7 @@ Alapértelmezés: Az ingatlan releváns (true), kivéve, ha kizáró okot talál
 
 Kizáró okok (`relevant: false`):
 - Nem 1/1 tulajdon vagy nem tiszta eladás (pl. osztatlan közös, tulajdoni hányad, bérleti jog, haszonélvezet, önkormányzati, csere).
-- Ingatlan típusa: Kizáró ok, ha nem "lakás", "társasházi lakás", vagy "félszuterén lakás". Például a telek, garázs, nyaraló, ikerház, családi ház NEM releváns.
+- Ingatlan típusa: Kizáró ok, ha NEM lakás célú (telek, garázs, nyaraló, üdülő NEM releváns). Lakás, családi ház, ikerház Budapesten RELEVÁNS.
 - Nem budapesti.
 - "Csak készpénzes vevőknek" (ez gyakran jogi problémát jelez).
 
