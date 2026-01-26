@@ -98,6 +98,7 @@ DEFINITELY_IRRELEVANT_KEYWORDS = {
     "önkormányzati": "Önkormányzati tulajdon",
     "ingatlancsere": "Ingatlancsere (nem eladás)",
     "cserélhető": "Csere (nem eladás)",
+    "cserélném": "Csere (nem eladás)",
     "haszonélvezet": "Haszonélvezet",
 }
 
