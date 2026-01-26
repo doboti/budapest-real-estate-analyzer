@@ -100,7 +100,12 @@ LIKELY_IRRELEVANT_KEYWORDS = {
     # Üres - minden más ingatlan típus engedélyezett (ikerház, családi ház, üzlet, iroda, nyaraló)
 }
 
-NEGATION_KEYWORDS = ["tehermentes", "nincs haszonélvezet", "törölve", "megszüntetve"]
+NEGATION_KEYWORDS = [
+    "tehermentes", "per- és tehermentes", "per és tehermentes",
+    "nincs haszonélvezet", "törölve", "megszüntetve",
+    "nincs", "nem terhelt", "teljes tulajdon", "1/1 tulajdon",
+    "magántulajdon", "magánszemély tulajdonban"
+]
 
 # ============================================================================
 # ASYNC LLM HÍVÁSOK AIOHTTP-VAL
@@ -439,12 +444,23 @@ def worker_filter_article(row: pd.Series) -> Dict[str, Any]:
     # Egyértelmű kizáró kulcsszavak
     for keyword, reason in DEFINITELY_IRRELEVANT_KEYWORDS.items():
         if re.search(r'\b' + re.escape(keyword) + r'\b', combined_text):
-            return {
-                'article_id': article_id,
-                'relevant': False,
-                'reason': f'Worker előszűrés: {reason}',
-                'needs_llm': False
-            }
+            # Ellenőrizzük, hogy nincs-e negáció a közelben
+            # Például: "nincs haszonélvezet", "tehermentes", "törölve"
+            negated = False
+            for negation in NEGATION_KEYWORDS:
+                # Keresés 50 karakteres ablakban a kulcsszó előtt és után
+                pattern = rf'.{{0,50}}\b{re.escape(negation)}\b.{{0,50}}\b{re.escape(keyword)}\b|\b{re.escape(keyword)}\b.{{0,50}}\b{re.escape(negation)}\b'
+                if re.search(pattern, combined_text):
+                    negated = True
+                    break
+            
+            if not negated:
+                return {
+                    'article_id': article_id,
+                    'relevant': False,
+                    'reason': f'Worker előszűrés: {reason}',
+                    'needs_llm': False
+                }
     
     # 3. ML-alapú előszűrés (TF-IDF + cosine similarity)
     # Kivétel: rövid leírásokat (< 100 karakter) bízzuk az LLM-re,
