@@ -571,10 +571,23 @@ def process_data_async(task_id: str, *args, **kwargs):
         
         
         task_manager.update_progress(task_id, 0.0, "Feladat indítása...")
-        task_manager.set_status(task_id, "running", "Modell letöltése...")
+        task_manager.set_status(task_id, "running", "Modell ellenőrzése...")
         
-        # Modell pull
-        ollama.pull(MODEL_NAME)
+        # Modell pull (ha még nincs letöltve)
+        try:
+            # Ellenőrizzük, hogy a modell már létezik-e
+            available_models = ollama.list()
+            model_exists = any(MODEL_NAME in model.get('name', '') for model in available_models.get('models', []))
+            
+            if not model_exists:
+                print(f"📥 Modell letöltése: {MODEL_NAME}", flush=True)
+                ollama.pull(MODEL_NAME)
+                print(f"✅ Modell letöltve: {MODEL_NAME}", flush=True)
+            else:
+                print(f"✅ Modell már elérhető: {MODEL_NAME}", flush=True)
+        except Exception as e:
+            # Ha nincs internet vagy már letöltve van, folytassuk
+            print(f"⚠️  Modell ellenőrzési hiba (folytatás): {e}", flush=True)
         
         task_manager.update_progress(task_id, 0.0, "Adatok betöltése...")
 
