@@ -193,11 +193,17 @@ class TaskManager:
         self.update_progress(task_id, 100.0, message)
         self.set_status(task_id, "completed", message)
 
-def enqueue_data_processing_task(task_id: str) -> str:
-    """Adatfeldolgozási feladat beütemezése a háttérben."""
+def enqueue_data_processing_task(task_id: str, test_mode: bool = False) -> str:
+    """Adatfeldolgozási feladat beütemezése a háttérben.
+    
+    Args:
+        task_id: A feladat azonosítója
+        test_mode: Ha True, akkor teszt módban fut (korlátozott elemszám)
+    """
     job = task_queue.enqueue(
         'background_tasks.process_data_async',
         task_id,
+        test_mode,  # Teszt mód flag átadása
         job_timeout='2h',  # 2 órás timeout (nagy adathalmazokhoz)
         job_id=task_id
     )

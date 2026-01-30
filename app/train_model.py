@@ -17,7 +17,7 @@ except ImportError:
     HAS_XGBOOST = False
 
 # Paths
-DATA_FILE = '/workspace/core_layer_filtered.parquet'
+DATA_FILE = '/workspace/parquet/core_layer_filtered.parquet'
 MODEL_FILE = '/workspace/price_prediction_model.pkl'
 METRICS_FILE = '/workspace/model_metrics.json'
 

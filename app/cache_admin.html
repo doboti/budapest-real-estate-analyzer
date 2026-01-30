@@ -137,7 +137,8 @@
         </div>
     </div>
 
-    <!-- Inkrementális Feldolgozás Műveletek -->
+    <!-- Inkrementális Feldolgozás Műveletek - CSAK ADMIN -->
+    {% if session.get('logged_in') %}
     <div class="card mt-4">
         <div class="card-header">
             <h4>Inkrementális Feldolgozás Műveletek</h4>
@@ -152,7 +153,7 @@
         </div>
     </div>
 
-    <!-- ML Műveletek -->
+    <!-- ML Műveletek - CSAK ADMIN -->
     <div class="card mt-4">
         <div class="card-header">
             <h4>ML Worker Filter Műveletek</h4>
@@ -164,7 +165,7 @@
         </div>
     </div>
     
-    <!-- Cache Műveletek -->
+    <!-- Cache Műveletek - CSAK ADMIN -->
     <div class="card mt-4">
         <div class="card-header">
             <h4>Cache Műveletek</h4>
@@ -178,6 +179,13 @@
             </button>
         </div>
     </div>
+    {% else %}
+    <div class="alert alert-warning mt-4">
+        <h5>🔒 Admin jogosultság szükséges</h5>
+        <p>A rendszer adminisztrációs műveletek eléréséhez jelentkezz be admin-ként.</p>
+        <a href="{{ url_for('login') }}" class="btn btn-primary">Bejelentkezés</a>
+    </div>
+    {% endif %}
     
     <!-- Cache Működése -->
     <div class="card mt-4">

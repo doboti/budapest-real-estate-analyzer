@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Admin Vezérlőpult{% endblock %}
+{% block content %}
+<h1>🛠️ Adminisztrációs Vezérlőpult</h1>
+<p class="text-muted">Erőforrás-igényes műveletek kezelése</p>
+
+<!-- Adatfeldolgozás szekció -->
+<div class="card mt-4">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">📊 Adatfeldolgozás (LLM Elemzés)</h5>
+    </div>
+    <div class="card-body">
+        <p>Elindítja a teljes ingatlanhirdetés-feldolgozási pipeline-t az LLM modell segítségével.</p>
+        <p><strong>Becsült idő:</strong> 6-8 óra (~12000 hirdetés)</p>
+        <p><strong>Erőforrás:</strong> GPU ajánlott (Ollama + llama3.2:3b)</p>
+        
+        <button onclick="startPipeline()" class="btn btn-warning btn-lg">
+            🚀 Adatfeldolgozás Indítása
+        </button>
+        
+        <div id="pipelineStatus" class="mt-3 d-none">
+            <div class="progress">
+                <div id="pipelineProgress" class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" style="width: 0%">0%</div>
+            </div>
+            <p id="pipelineMessage" class="mt-2 text-muted"></p>
+        </div>
+    </div>
+</div>
+
+<!-- ML Modell Tanítás -->
+<div class="card mt-4">
+    <div class="card-header bg-danger text-white">
+        <h5 class="mb-0">🤖 Machine Learning Modell Tanítása</h5>
+    </div>
+    <div class="card-body">
+        <p>Árlétszáló ML modell betanítása a feldolgozott adatokból.</p>
+        <p><strong>Becsült idő:</strong> 5-10 perc</p>
+        <p><strong>Előfeltétel:</strong> Feldolgozott core_layer_filtered.parquet</p>
+        
+        <button onclick="trainModel()" class="btn btn-danger">
+            🎓 Modell Tanítása
+        </button>
+    </div>
+</div>
+
+<!-- Cache és Metadata Kezelés -->
+<div class="card mt-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0">🗄️ Cache & Metadata Kezelés</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Redis Cache Törlése</h6>
+                <p class="small">LLM válaszok újragenerálásához</p>
+                <button onclick="clearCache()" class="btn btn-info">
+                    🗑️ Cache Törlése
+                </button>
+            </div>
+            <div class="col-md-6">
+                <h6>Inkrementális Metadata Reset</h6>
+                <p class="small">Teljes újrafeldolgozáshoz</p>
+                <button onclick="resetIncremental()" class="btn btn-warning">
+                    🔄 Metadata Törlése
+                </button>
+            </div>
+        </div>
+        <div class="mt-3">
+            <a href="{{ url_for('cache_admin') }}" class="btn btn-outline-secondary">
+                📈 Cache Statisztikák Megtekintése
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Rendszer Info -->
+<div class="card mt-4">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="mb-0">ℹ️ Fontos Információk</h5>
+    </div>
+    <div class="card-body">
+        <ul>
+            <li><strong>Lokális futtatás:</strong> Ezek a műveletek GPU/CPU intenzívek, csak helyi környezetben használd!</li>
+            <li><strong>GCP Cloud Run:</strong> Ha felhőben futtatod az appot, ezek a funkciók NEM érhetők el.</li>
+            <li><strong>Adat szinkronizáció:</strong> Feldolgozás után a .parquet és .pkl fájlokat töltsd fel a repo-ba.</li>
+            <li><strong>Docker:</strong> Ellenőrizd, hogy az Ollama konténer fut-e (<code>docker ps</code>)</li>
+        </ul>
+    </div>
+</div>
+
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    const socket = io();
+
+    function startPipeline() {
+        if (!confirm('Biztosan elindítod a teljes adatfeldolgozást? Ez 6-8 órát vehet igénybe!')) {
+            return;
+        }
+        
+        fetch('/run-pipeline', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('pipelineStatus').classList.remove('d-none');
+                    document.getElementById('pipelineMessage').textContent = 'Feldolgozás folyamatban...';
+                    
+                    // WebSocket csatlakozás a progress tracking-hez
+                    socket.emit('join', { room: data.task_id });
+                    
+                    alert('✅ Adatfeldolgozás elindult! Task ID: ' + data.task_id);
+                } else {
+                    alert('❌ Hiba: ' + data.error);
+                }
+            })
+            .catch(err => alert('❌ Hálózati hiba: ' + err));
+    }
+
+    function trainModel() {
+        if (!confirm('Elindítod a modell tanítását?')) return;
+        
+        fetch('/train-model', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Modell tanítás elindult a háttérben!');
+                } else {
+                    alert('❌ Hiba: ' + data.message);
+                }
+            })
+            .catch(err => alert('❌ Hálózati hiba: ' + err));
+    }
+
+    function clearCache() {
+        if (!confirm('Törölni szeretnéd a Redis cache-t? Az LLM válaszokat újra kell majd generálni.')) return;
+        
+        fetch('/admin/cache/clear', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Cache törölve: ' + data.count + ' elem');
+                } else {
+                    alert('❌ Hiba: ' + data.error);
+                }
+            })
+            .catch(err => alert('❌ Hálózati hiba: ' + err));
+    }
+
+    function resetIncremental() {
+        if (!confirm('Törölni szeretnéd az inkrementális metadata-t? A következő futtatás MINDEN hirdetést feldolgoz.')) return;
+        
+        fetch('/admin/incremental/reset', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Metadata törölve!');
+                } else {
+                    alert('❌ Hiba: ' + data.error);
+                }
+            })
+            .catch(err => alert('❌ Hálózati hiba: ' + err));
+    }
+
+    // WebSocket progress tracking
+    socket.on('progress', function(data) {
+        const percent = data.percent || 0;
+        document.getElementById('pipelineProgress').style.width = percent + '%';
+        document.getElementById('pipelineProgress').textContent = percent.toFixed(1) + '%';
+        document.getElementById('pipelineMessage').textContent = data.message || '';
+    });
+
+    socket.on('completed', function(data) {
+        document.getElementById('pipelineMessage').textContent = '✅ Feldolgozás befejezve!';
+        document.getElementById('pipelineProgress').classList.remove('progress-bar-animated');
+        alert('✅ Adatfeldolgozás kész!\nRelevans: ' + data.relevant + ', Irrelevans: ' + data.irrelevant);
+    });
+</script>
+{% endblock %}

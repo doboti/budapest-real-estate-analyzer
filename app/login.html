@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Bejelentkezés - Admin{% endblock %}
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <h4 class="mb-0">🔒 Admin Bejelentkezés</h4>
+                </div>
+                <div class="card-body">
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Jelszó</label>
+                            <input type="password" 
+                                   class="form-control" 
+                                   id="password" 
+                                   name="password" 
+                                   placeholder="Adminisztrátor jelszó"
+                                   required 
+                                   autofocus>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                🔓 Belépés
+                            </button>
+                            <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                                🏠 Vissza a főoldalra
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <div class="alert alert-info mt-3">
+                <strong>ℹ️ Figyelem:</strong> Az adminisztrátori funkciók erőforrás-igényes műveleteket tartalmaznak 
+                (LLM feldolgozás, ML modell tanítás). Csak helyi környezetben futtasd!
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

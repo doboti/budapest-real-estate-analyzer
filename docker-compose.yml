@@ -47,9 +47,11 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - SECRET_KEY=your_very_long_random_secret_key_here_change_in_production
+      - ADMIN_PASSWORD=SzuperTitkosJelszo2025!
     command: ["python", "/workspace/app/webapp.py"]
 
-  worker:
+  llm-data-worker:
     build: .
     depends_on:
       redis:
@@ -64,7 +66,7 @@ services:
       - REDIS_PORT=6379
     command: ["python", "/workspace/app/start_worker.py"]
     deploy:
-      replicas: 2  # 2 párhuzamos worker
+      replicas: 2  # 2 párhuzamos LLM adatfeldolgozó worker
 
 volumes:
   redis_data:

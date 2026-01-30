@@ -14,8 +14,8 @@ from parquet_streaming import (
 
 # Constants
 INPUT_FILE = '/workspace/core_data.parquet'
-OUTPUT_FILE = '/workspace/core_layer_filtered.parquet'
-IRRELEVANT_OUTPUT_FILE = '/workspace/core_layer_irrelevant.parquet'
+OUTPUT_FILE = '/workspace/parquet/core_layer_filtered.parquet'
+IRRELEVANT_OUTPUT_FILE = '/workspace/parquet/core_layer_irrelevant.parquet'
 LOG_FILE = '/workspace/llm_decisions_log.csv'
 MODEL_NAME = 'llama3.2:3b'
 

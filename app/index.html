@@ -82,12 +82,27 @@
         </div>
     </div>
     
-    <!-- Indító gomb -->
+    <!-- Indító gomb - CSAK ADMIN LÁTJA -->
+    {% if session.get('logged_in') %}
     <div id="start-container">
-        <button id="start-pipeline" class="btn btn-lg btn-primary">
-            <i class="fas fa-play"></i> LLM Adatfeldolgozás Indítása &raquo;
+        <button id="start-pipeline" class="btn btn-lg btn-primary me-2">
+            <i class="fas fa-play"></i> LLM Adatfeldolgozás Indítása (Teljes)
         </button>
+        <button id="start-pipeline-test" class="btn btn-lg btn-warning">
+            <i class="fas fa-flask"></i> Teszt Futtatás (100 worker + 50 LLM)
+        </button>
+        <p class="text-muted mt-2">
+            <small><strong>Teljes:</strong> Mind a 12653 cikk (~6-8 óra) | 
+            <strong>Teszt:</strong> Első 100 worker + 50 LLM (~5 perc)</small>
+        </p>
     </div>
+    {% else %}
+    <div class="alert alert-info mt-4">
+        <h5>🔒 Admin jogosultság szükséges</h5>
+        <p>Az adatfeldolgozás indításához jelentkezz be admin-ként.</p>
+        <a href="{{ url_for('login') }}" class="btn btn-primary">Bejelentkezés</a>
+    </div>
+    {% endif %}
     
     <!-- Befejezett feladat információ -->
     <div id="completed-container" class="mt-4" style="display: none;">
@@ -142,8 +157,16 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 
 document.getElementById('start-pipeline').addEventListener('click', function() {
-    startDataProcessing();
+    startDataProcessing(false);  // Teljes feldolgozás
 });
+
+// Teszt gomb eseménykezelő
+const testButton = document.getElementById('start-pipeline-test');
+if (testButton) {
+    testButton.addEventListener('click', function() {
+        startDataProcessing(true);  // Teszt feldolgozás
+    });
+}
 
 // Reset task button handler
 document.getElementById('reset-task').addEventListener('click', function() {
@@ -194,14 +217,20 @@ function showAlert(message, type) {
     }, 5000);
 }
 
-function startDataProcessing() {
+function startDataProcessing(isTest = false) {
     // Gomb letiltása
-    const startBtn = document.getElementById('start-pipeline');
-    startBtn.disabled = true;
+    const startBtn = isTest ? document.getElementById('start-pipeline-test') : document.getElementById('start-pipeline');
+    const allButtons = document.querySelectorAll('#start-container button');
+    
+    allButtons.forEach(btn => {
+        btn.disabled = true;
+    });
+    
     startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Indítás...';
     
     // API hívás az adatfeldolgozás indítására
-    fetch('/run-pipeline', {
+    const endpoint = isTest ? '/run-pipeline-test' : '/run-pipeline';
+    fetch(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -391,8 +420,17 @@ function showErrorState(message) {
 
 function resetStartButton() {
     const startBtn = document.getElementById('start-pipeline');
-    startBtn.disabled = false;
-    startBtn.innerHTML = '<i class="fas fa-play"></i> LLM Adatfeldolgozás Indítása &raquo;';
+    const testBtn = document.getElementById('start-pipeline-test');
+    
+    if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="fas fa-play"></i> LLM Adatfeldolgozás Indítása (Teljes)';
+    }
+    
+    if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<i class="fas fa-flask"></i> Teszt Futtatás (100 worker + 50 LLM)';
+    }
 }
 </script>
 {% endblock %}

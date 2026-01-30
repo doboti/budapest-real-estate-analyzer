@@ -34,8 +34,9 @@ IRRELEVANT_OUTPUT_FILE = '/workspace/parquet/core_layer_irrelevant.parquet'
 LOG_FILE = '/workspace/llm_decisions_log.csv'
 
 # 🧪 TESZT MÓD: Csak első 100 hirdetést dolgozza fel (True = teszt, False = teljes)
-TEST_MODE = True
+TEST_MODE = False
 TEST_LIMIT = 100
+TEST_LIMIT_LLM = 50  # LLM teszt mód: csak első 50 LLM elemzés
 
 # Batch LLM feldolgozáshoz (3 cikk egyszerre)
 BATCH_PROMPT_TEMPLATE = """
@@ -210,8 +211,8 @@ async def async_get_batch_llm_decision(session: aiohttp.ClientSession, articles_
                 validated_results.append(validated.dict())
             except Exception as e:
                 validated_results.append({
-                    "relevant": False, 
-                    "reason": f"Validációs hiba: {str(e)}", 
+                    "relevant": True, 
+                    "reason": f"Validációs hiba (alapértelmezés: relevant): {str(e)}", 
                     "floor": None, "street": None, "building_type": None, 
                     "property_category": None, "has_terrace": None
                 })
@@ -355,19 +356,16 @@ def worker_filter_article(row: pd.Series) -> Dict[str, Any]:
     except Exception as e:
         return {
             'article_id': row.get('article_id', 'unknown'),
-            'relevant': False,
-            'reason': f'Validációs hiba: {str(e)}',
+            'relevant': True,
+            'reason': f'Validációs hiba (alapértelmezés: relevant): {str(e)}',
             'needs_llm': False
         }
     
-    # 1. Üres leírás → azonnal irreleváns
+    # 1. Üres leírás → LLM-hez megy (ne szűrjük ki automatikusan)
+    # VÁLTOZÁS: Alapértelmezés hogy minden relevant, üres leírás is
     if not description or len(description.strip()) < 20:
-        return {
-            'article_id': article_id,
-            'relevant': False,
-            'reason': 'Worker előszűrés: Üres vagy túl rövid leírás',
-            'needs_llm': False
-        }
+        # NE szűrjük ki, hanem adjuk tovább LLM-nek (vagy alapból relevant)
+        pass  # Folytatjuk a feldolgozást
     
     # 2. Kulcsszavas előszűrés → azonnal irreleváns  
     combined_text = f"{title} {description}".lower()
@@ -448,8 +446,8 @@ def process_article_with_llm(row: pd.Series) -> Dict[str, Any]:
     except Exception as e:
         return {
             'article_id': row.get('article_id', 'unknown'),
-            'relevant': False,
-            'reason': f'Validációs hiba: {str(e)}',
+            'relevant': True,
+            'reason': f'Validációs hiba (alapértelmezés: relevant): {str(e)}',
             'description': row.get('description', ''),
             'floor': None, 'street': None, 'building_type': None,
             'property_category': None, 'has_terrace': None
@@ -490,14 +488,14 @@ def process_article_enhanced(row: pd.Series, task_manager: TaskManager, task_id:
     else:
         return process_article_with_llm(row)
 
-def process_data_async(task_id: str, *args, **kwargs):
+def process_data_async(task_id: str, test_mode: bool = False):
     """
     Fő aszinkron adatfeldolgozó függvény.
     Ez fut a háttérben RQ worker-ben.
     
     Args:
         task_id: A feladat azonosítója
-        *args, **kwargs: RQ által átadott extra paraméterek (figyelmen kívül hagyjuk)
+        test_mode: Ha True, akkor teszt módban fut (100 worker + 50 LLM limit)
     """
     # TaskManager Redis-só inicializálása (worker környezetben nincs SocketIO)
     task_manager = TaskManager(socketio=None)
@@ -528,7 +526,7 @@ def process_data_async(task_id: str, *args, **kwargs):
         
         # ML Worker Filter tréning (ha van elég adat)
         # TESZT MÓDBAN KIKAPCSOLVA - ne használja a régi 10k adatokat
-        if not TEST_MODE:
+        if not test_mode:
             print("🎯 ML Worker Filter inicializálása...", flush=True)
             ml_trained = train_ml_filter_from_llm_log()
             if ml_trained:
@@ -603,23 +601,42 @@ def process_data_async(task_id: str, *args, **kwargs):
         articles_to_process = unique_articles  # Csak új/módosult
         
         # 🧪 TESZT MÓD: Csak első N hirdetést feldolgozni
-        if TEST_MODE:
+        if test_mode:
             print(f"🧪 TESZT MÓD AKTÍV: Csak első {TEST_LIMIT} hirdetést dolgozunk fel", flush=True)
             articles_to_process = articles_to_process.head(TEST_LIMIT)
+            # FONTOS: Teszt módban a total_articles is a teszt limit!
+            total_articles = len(articles_to_process)
         
         total_to_process = len(articles_to_process)
         already_processed = len(existing_processed)
         
-        # Kezdeti progress: már feldolgozott / összes
-        if total_articles > 0:
-            initial_progress = (already_processed / total_articles) * 100
+        # 🧪 TESZT MÓD: Ne számoljuk az already_processed-et (külön teszt futás)
+        if test_mode:
+            already_processed = 0  # Teszt módban friss start, ne adjuk hozzá a régi számokat
+            print(f"🧪 TESZT MÓD: Feldolgozott számláló nullázva (friss start)", flush=True)
+        
+        # Kezdeti progress számítás - HA VAN FELDOLGOZANDÓ, 0%-ról indul!
+        if total_to_process > 0:
+            # Van feldolgozandó adat → 0%-ról indulunk, függetlenül az already_processed-től
+            initial_progress = 0.0
+            print(f"📊 Kezdés: {total_to_process} új cikk feldolgozása ({already_processed} már kész)", flush=True)
             task_manager.update_progress(
                 task_id, initial_progress, 
-                f"Betöltve: {already_processed}/{total_articles} már kész, {total_to_process} feldolgozandó",
+                f"Indítás: {total_to_process} feldolgozandó cikk ({already_processed} már kész)",
                 processed_items=already_processed,
                 relevant_found=0,
                 irrelevant_found=0,
                 total_items=total_articles  # Összes elem beállítása!
+            )
+        elif already_processed > 0:
+            # Nincs új adat, minden már kész
+            task_manager.update_progress(
+                task_id, 100.0, 
+                f"✅ Minden cikk már feldolgozva: {already_processed}/{total_articles}",
+                processed_items=already_processed,
+                relevant_found=0,
+                irrelevant_found=0,
+                total_items=total_articles
             )
         else:
             task_manager.update_progress(
@@ -697,12 +714,38 @@ def process_data_async(task_id: str, *args, **kwargs):
         if len(articles_for_llm) > 0:
             # BATCH PROCESSING KIKAPCSOLVA - egyenként dolgozzuk fel
             # A batch processing keveri össze a cikkeket (confusion)
-            for article in articles_for_llm:
+            total_llm = len(articles_for_llm)
+            
+            # 🧪 LLM TESZT MÓD: csak első TEST_LIMIT_LLM darabot dolgozzuk fel
+            if test_mode and total_llm > TEST_LIMIT_LLM:
+                print(f"🧪 LLM TESZT MÓD: Csak első {TEST_LIMIT_LLM} cikk feldolgozása (összesen {total_llm} helyett)", flush=True)
+                articles_for_llm = articles_for_llm[:TEST_LIMIT_LLM]
+                total_llm = len(articles_for_llm)
+            
+            for idx, article in enumerate(articles_for_llm, 1):
                 individual_result = process_article_with_llm(article)
                 llm_results.append(individual_result)
                 llm_processed_count += 1
                 if individual_result['relevant']:
                     llm_relevant_count += 1
+                
+                # Progress update minden 5. elemnél vagy az utolsónál
+                if idx % 5 == 0 or idx == total_llm:
+                    # 2. fázis: 50-100%
+                    phase2_progress = 50.0 + (idx / total_llm) * 50.0
+                    current_processed = already_processed + len(worker_results) + idx
+                    current_relevant = worker_relevant_count + llm_relevant_count
+                    current_irrelevant = worker_filtered_count + (idx - llm_relevant_count)
+                    
+                    print(f"📊 LLM fázis frissítés: {phase2_progress:.1f}% - LLM {idx}/{total_llm} | Releváns: {current_relevant}, Irreleváns: {current_irrelevant}", flush=True)
+                    task_manager.update_progress(
+                        task_id, phase2_progress,
+                        f"2. fázis - LLM elemzés: {idx}/{total_llm}",
+                        processed_items=current_processed,
+                        relevant_found=current_relevant,
+                        irrelevant_found=current_irrelevant,
+                        total_items=total_articles
+                    )
             
             print(f"   Egyenként feldolgozva: {llm_processed_count} cikk", flush=True)
         

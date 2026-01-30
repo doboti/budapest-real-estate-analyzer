@@ -5,8 +5,9 @@ import duckdb
 import folium
 import subprocess
 import uuid
+from functools import wraps
 
-from flask import Flask, render_template, request, flash, redirect, url_for, jsonify
+from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, session
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from task_manager import TaskManager, enqueue_data_processing_task, get_queue_status
 from models import TaskStatus
@@ -26,15 +27,28 @@ import json
 WORKSPACE_DIR = '/workspace'
 APP_DIR = os.path.join(WORKSPACE_DIR, 'app')
 STATIC_DIR = os.path.join(APP_DIR, 'static')
-RELEVANT_FILE = os.path.join(WORKSPACE_DIR, 'core_layer_filtered.parquet')
-IRRELEVANT_FILE = os.path.join(WORKSPACE_DIR, 'core_layer_irrelevant.parquet')
+PARQUET_DIR = os.path.join(WORKSPACE_DIR, 'parquet')
+RELEVANT_FILE = os.path.join(PARQUET_DIR, 'core_layer_filtered.parquet')
+IRRELEVANT_FILE = os.path.join(PARQUET_DIR, 'core_layer_irrelevant.parquet')
 MAP_OUTPUT_FILE = os.path.join(STATIC_DIR, 'map_render.html')
 
 app = Flask(__name__, template_folder=APP_DIR)
-app.secret_key = 'supersecretkey'  # Éles környezetben ezt cseréld le!
+app.secret_key = os.getenv('SECRET_KEY', 'supersecretkey')
+ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')  # Alapértelmezett jelszó fejlesztéshez
 
 # WebSocket támogatás real-time progress tracking-hez
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# --- Admin védelem dekorátor ---
+def admin_required(f):
+    """Ellenőrzi, hogy a felhasználó be van-e jelentkezve admin-ként."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            flash('Ehhez a funkcióhoz admin jogosultság szükséges!', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Task manager inicializálása SocketIO-val
 task_manager = TaskManager(socketio)
@@ -56,21 +70,74 @@ def index():
     """A főoldal, ahonnan a feldolgozást lehet indítani."""
     return render_template('index.html')
 
+# --- Admin Login / Logout ---
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Admin bejelentkezési oldal."""
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if password == ADMIN_PASSWORD:
+            session['logged_in'] = True
+            flash('Sikeres bejelentkezés!', 'success')
+            return redirect(url_for('admin_dashboard'))
+        else:
+            flash('Hibás jelszó!', 'danger')
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Admin kijelentkezés."""
+    session.pop('logged_in', None)
+    flash('Sikeresen kijelentkeztél.', 'info')
+    return redirect(url_for('index'))
+
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    """Admin vezérlőpult - csak bejelentkezve elérhető."""
+    return render_template('admin.html')
+
 @app.route('/run-pipeline', methods=['POST'])
+@admin_required
 def run_pipeline():
     """Elindítja az adatfeldolgozást aszinkron módon RQ háttérfeladatként."""
     try:
         # Új feladat létrehozása
         task_id = task_manager.create_task()
         
-        # Feladat beütemezése a háttérben
-        job_id = enqueue_data_processing_task(task_id)
+        # Feladat beütemezése a háttérben (normál mód: test_mode=False)
+        job_id = enqueue_data_processing_task(task_id, test_mode=False)
         
         # Sikeres válasz a task_id-val
         return jsonify({
             'success': True, 
             'task_id': task_id,
             'message': 'Az adatfeldolgozás elindult a háttérben. A haladás követhető a /task-status API-n.'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False, 
+            'error': str(e),
+            'message': f'Hiba történt a folyamat indításakor: {e}'
+        }), 500
+
+@app.route('/run-pipeline-test', methods=['POST'])
+@admin_required
+def run_pipeline_test():
+    """Teszt feldolgozás: első 100 cikk worker + első 50 LLM elemzés."""
+    try:
+        # Új feladat létrehozása
+        task_id = task_manager.create_task()
+        
+        # Feladat beütemezése TESZT MÓDBAN (test_mode=True)
+        job_id = enqueue_data_processing_task(task_id, test_mode=True)
+        
+        # Sikeres válasz a task_id-val
+        return jsonify({
+            'success': True, 
+            'task_id': task_id,
+            'message': f'🧪 TESZT feldolgozás elindult: első 100 cikk worker + első 50 LLM elemzés'
         })
         
     except Exception as e:
@@ -593,6 +660,7 @@ def prediction():
                          all_results=all_results)
 
 @app.route('/train-model', methods=['POST'])
+@admin_required
 def train_model_route():
     """Elindítja a modell tanítását."""
     try:
@@ -786,6 +854,7 @@ def admin_incremental_stats():
         }), 500
 
 @app.route('/admin/incremental/reset', methods=['POST'])
+@admin_required
 def admin_incremental_reset():
     """Inkrementális metadata törlése (teljes újrafeldolgozáshoz)"""
     try:
@@ -802,6 +871,7 @@ def admin_incremental_reset():
         }), 500
 
 @app.route('/admin/cache/clear', methods=['POST'])
+@admin_required
 def admin_cache_clear():
     """LLM cache tartalmának törlése"""
     try:

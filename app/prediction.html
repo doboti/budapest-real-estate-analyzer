@@ -11,10 +11,14 @@
     {% if not model_exists %}
     <div class="alert alert-warning">
         <h5>⚠️ A modell még nincs betanítva!</h5>
-        <p>Kattints az alábbi gombra a modell tanításához. Ez néhány percet vehet igénybe.</p>
+        <p>A modell tanításához admin jogosultság szükséges.</p>
+        {% if session.get('logged_in') %}
         <form action="{{ url_for('train_model_route') }}" method="post">
             <button type="submit" class="btn btn-primary">Modell Tanítása</button>
         </form>
+        {% else %}
+        <a href="{{ url_for('login') }}" class="btn btn-primary">Bejelentkezés</a>
+        {% endif %}
     </div>
     {% else %}
     
@@ -121,9 +125,11 @@
             </table>
             {% endif %}
             
+            {% if session.get('logged_in') %}
             <form action="{{ url_for('train_model_route') }}" method="post" class="mt-3">
                 <button type="submit" class="btn btn-sm btn-secondary">Modell Újratanítása</button>
             </form>
+            {% endif %}
         </div>
     </div>
     

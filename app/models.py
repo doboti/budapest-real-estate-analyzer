@@ -113,7 +113,7 @@ def sanitize_llm_output(content: str) -> dict:
     # JSON objektum kinyerése a válaszból
     json_match = re.search(r'\{.*\}', content, re.DOTALL)
     if not json_match:
-        return {"relevant": False, "reason": "Hibás LLM válasz formátum"}
+        return {"relevant": True, "reason": "Hibás LLM válasz formátum (alapértelmezés: relevant)"}
     
     try:
         raw_data = json.loads(json_match.group(0))
@@ -121,6 +121,6 @@ def sanitize_llm_output(content: str) -> dict:
         validated = LLMResponse(**raw_data)
         return validated.dict()
     except json.JSONDecodeError:
-        return {"relevant": False, "reason": "Hibás JSON formátum"}
+        return {"relevant": True, "reason": "Hibás JSON formátum (alapértelmezés: relevant)"}
     except Exception as e:
-        return {"relevant": False, "reason": f"Validációs hiba: {str(e)}"}
+        return {"relevant": True, "reason": f"Validációs hiba (alapértelmezés: relevant): {str(e)}"}

@@ -29,6 +29,14 @@
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('price_trends_view') }}">Ártrendek</a></li>
                 <li class="nav-item"><a class="nav-link" href="{{ url_for('cache_admin') }}">Cache Admin</a></li>
             </ul>
+            <ul class="navbar-nav ms-auto">
+                {% if session.get('logged_in') %}
+                    <li class="nav-item"><a class="nav-link text-warning" href="{{ url_for('admin_dashboard') }}">🛠️ Admin</a></li>
+                    <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">🚪 Kilépés</a></li>
+                {% else %}
+                    <li class="nav-item"><a class="nav-link text-success" href="{{ url_for('login') }}">🔒 Belépés</a></li>
+                {% endif %}
+            </ul>
         </div>
     </div>
 </nav>
