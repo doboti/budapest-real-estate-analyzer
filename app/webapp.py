@@ -141,24 +141,40 @@ def admin_dashboard():
 def run_pipeline():
     """Elindítja az Airflow DAG-ot teljes feldolgozásra."""
     try:
-        # Airflow DAG trigger
-        dag_id = 'ingatlan_llm_pipeline'
-        result = airflow_client.trigger_dag(dag_id, conf={'test_mode': False})
+        import docker
         
-        if 'error' in result:
+        dag_id = 'ingatlan_llm_pipeline'
+        
+        # Docker API használata - NAME-et használunk, nem ID-t!
+        client = docker.from_env()
+        
+        # Container név alapján keresés (állandó marad újraindításkor)
+        containers = client.containers.list(filters={'name': 'airflow-scheduler'})
+        
+        if not containers:
             return jsonify({
                 'success': False,
-                'error': result['error'],
-                'message': f'Hiba az Airflow DAG indításkor: {result["error"]}'
+                'error': 'Airflow scheduler container nem fut',
+                'message': 'Az Airflow scheduler container nem található vagy nem fut.'
             }), 500
         
-        dag_run_id = result.get('dag_run_id')
+        scheduler = containers[0]
+        
+        result = scheduler.exec_run(
+            ['airflow', 'dags', 'trigger', dag_id]
+        )
+        
+        if result.exit_code != 0:
+            return jsonify({
+                'success': False,
+                'error': result.output.decode('utf-8'),
+                'message': f'Hiba az Airflow DAG indításkor: {result.output.decode("utf-8")}'
+            }), 500
         
         # Sikeres válasz
         return jsonify({
             'success': True,
-            'dag_run_id': dag_run_id,
-            'message': 'Az adatfeldolgozás elindult Airflow-ban. Nyisd meg az Airflow UI-t a haladás követéséhez: http://localhost:8080'
+            'message': '✅ Az adatfeldolgozás elindult Airflow-ban. Nyisd meg az Airflow UI-t a haladás követéséhez: http://localhost:8081'
         })
         
     except Exception as e:
@@ -343,12 +359,22 @@ Fontos tudnivalók:
 - Az ár 'price_huf' oszlopban van (forintban)
 - A terület 'area_sqm' oszlopban van (négyzetméterben)
 - A kerület 'district' oszlopban van (pl. "I. kerület", "VI. kerület")
-- Az időbélyegek: 'valid_from' (mikor lett feladva), 'valid_till' (meddig volt aktív)
-- Az aktív hirdetések: ahol valid_till >= mai dátum VAGY valid_till IS NULL
+- Az időbélyegek: 'valid_from' (feladás dátuma), 'valid_till' (lejárat dátuma) - EZEK VARCHAR TÍPUSÚAK!
+- Ha dátummal akarsz számolni, használj explicit CAST-ot: CAST(valid_from AS DATE)
+- Mai dátum: CURRENT_DATE
+- LEGFRISSEBB/LEGÚJABB hirdetés = MAX(valid_from) vagy ORDER BY valid_from DESC LIMIT 1
+- LEGRÉGEBBI hirdetés = MIN(valid_from) vagy ORDER BY valid_from ASC LIMIT 1
+
+PÉLDA KÉRDÉSEK ÉS SQL-EK:
+1. "Hány aktív hirdetés van?" → SELECT COUNT(*) FROM relevant_data WHERE (valid_till IS NULL OR CAST(valid_till AS DATE) >= CURRENT_DATE)
+2. "Mi az átlagár a VI. kerületben?" → SELECT AVG(price_huf) FROM relevant_data WHERE district = 'VI. kerület'
+3. "Melyik a legdrágább lakás?" → SELECT * FROM relevant_data ORDER BY price_huf DESC LIMIT 1
+4. "Melyik a legfrissebb hirdetés?" → SELECT * FROM relevant_data ORDER BY CAST(valid_from AS DATE) DESC LIMIT 1
+5. "Hány hirdetést adtak fel ma?" → SELECT COUNT(*) FROM relevant_data WHERE CAST(valid_from AS DATE) = CURRENT_DATE
 
 Felhasználó kérdése: {user_question}
 
-Válaszolj CSAK egy érvényes SQL SELECT utasítással, semmi mást ne írj! Ne használj backtickeket vagy markdown formázást.
+Válaszolj CSAK egy érvényes DuckDB SQL SELECT utasítással, semmi mást ne írj! Ne használj backtickeket vagy markdown formázást.
 """
         
         # LLM hívás
@@ -753,11 +779,46 @@ def prediction():
 def train_model_route():
     """Elindítja a modell tanítását."""
     try:
-        subprocess.Popen(["python", os.path.join(APP_DIR, 'train_model.py')])
-        flash('A modell tanítása elindult a háttérben. Ez néhány percet vehet igénybe.', 'info')
+        # Use Docker API to execute training in a background process
+        import docker
+        import threading
+        
+        def run_training():
+            try:
+                client = docker.from_env()
+                containers = client.containers.list(filters={'name': 'app'})
+                if not containers:
+                    print("❌ App container not found")
+                    return
+                
+                app_container = containers[0]
+                result = app_container.exec_run(
+                    ['python', '/workspace/app/train_model.py'],
+                    workdir='/workspace/app',
+                    detach=False
+                )
+                
+                if result.exit_code == 0:
+                    print(f"✅ Model training completed successfully")
+                else:
+                    print(f"❌ Model training failed: {result.output.decode('utf-8')}")
+            except Exception as e:
+                print(f"❌ Training error: {e}")
+        
+        # Start training in background thread
+        thread = threading.Thread(target=run_training, daemon=True)
+        thread.start()
+        
+        return jsonify({
+            'success': True,
+            'message': '✅ A modell tanítása elindult a háttérben. Ez 5-10 percet vehet igénybe.'
+        })
+        
     except Exception as e:
-        flash(f'Hiba történt a modell tanítás indításakor: {e}', 'danger')
-    return redirect(url_for('prediction'))
+        return jsonify({
+            'success': False,
+            'error': f'Hiba történt a modell tanítás indításakor: {str(e)}'
+        }), 500
 
 @app.route('/predict-price', methods=['POST'])
 def predict_price():

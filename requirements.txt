@@ -15,6 +15,9 @@ python-dotenv  # Környezeti változók kezelése
 apache-airflow==2.8.1
 apache-airflow-providers-postgres==5.10.0
 
+# Docker API (DAG trigger-ezéshez)
+docker
+
 # Redis (cache + Airflow Celery backend)
 redis
 celery

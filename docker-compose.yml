@@ -173,11 +173,12 @@ services:
         condition: service_healthy
       ollama:
         condition: service_started
-      airflow-webserver:
-        condition: service_healthy
+      # airflow-webserver:
+      #   condition: service_healthy  # Kommentezve - nem kötelező
     volumes:
       - .:/workspace
       - ./gcp-credentials.json:/workspace/gcp-credentials.json:ro
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker API access
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - REDIS_HOST=redis

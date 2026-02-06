@@ -2,12 +2,65 @@
 
 > LLM-alapú ingatlanhirdetés feldolgozás, szűrés és árpredikció - Szakdolgozat projekt
 
+---
+
+## 🚀 Gyors Telepítés
+
+### Előfeltételek
+- **Docker Desktop** telepítve és futva
+- **Git** telepítve
+- Minimum **8 GB RAM** (Ollama LLM miatt)
+- **50 GB szabad tárhely** (Docker image-ek + modellek)
+
+### Telepítési Lépések
+
+1. **Repository klónozása**
+   ```bash
+   git clone <repository-url>
+   cd thesis_project
+   ```
+
+2. **Docker környezet indítása**
+   ```bash
+   docker-compose up -d
+   ```
+   
+   Ez elindítja az összes szolgáltatást:
+   - Flask webapp (port 5001)
+   - Airflow scheduler + workers
+   - Redis cache
+   - Ollama LLM server
+   - PostgreSQL database
+
+3. **Ollama modellek letöltése** (első indításkor, ~10-15 perc)
+   ```bash
+   docker exec thesis_project-ollama-1 ollama pull llama3.2:3b
+   docker exec thesis_project-ollama-1 ollama pull mistral:7b
+   ```
+
+4. **Alkalmazás elérése**
+   - **Főoldal**: http://localhost:5001
+   - **Admin panel**: http://localhost:5001/admin
+   - **Airflow UI**: http://localhost:8081 (username: `airflow`, password: `airflow`)
+
+5. **Első indulás ellenőrzése**
+   - Nyisd meg az admin panelt: http://localhost:5001/admin
+   - Kattints a **"🔍 Modul Tesztek"** gombra
+   - Ellenőrizd, hogy Redis, Ollama, Parquet, GCP mind ✅ állapotban van
+
+### Leállítás
+```bash
+docker-compose down
+```
+
+---
+
 ## 📋 Tartalomjegyzék
 
+- [Gyors Telepítés](#gyors-telepítés)
 - [Projekt Áttekintés](#projekt-áttekintés)
 - [Főbb Funkciók](#főbb-funkciók)
 - [Technológiai Stack](#technológiai-stack)
-- [Telepítés és Indítás](#telepítés-és-indítás)
 - [Használat](#használat)
 - [Architektúra](#architektúra)
 - [Admin Funkciók](#admin-funkciók)
