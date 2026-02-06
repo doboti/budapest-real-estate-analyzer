@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+{% block title %}Térkép - Hirdetések{% endblock %}
+{% block content %}
+<div class="mt-3">
+    <h1>🗺️ Térkép</h1>
+    <div class="alert alert-info">
+        <strong>Használat:</strong> Kattints egy kerületre a térképen, hogy megjelenjenek az ott található hirdetések!
+    </div>
+    
+    <!-- Térkép konténer -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div id="map" style="width: 100%; height: 600px;"></div>
+        </div>
+    </div>
+
+    <!-- Hirdetések lista szekció -->
+    <div id="listings-section" style="display: none;">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h3 class="mb-0">📋 <span id="district-name"></span> - Hirdetések (<span id="listings-count">0</span> db)</h3>
+            </div>
+            <div class="card-body">
+                <!-- Keresőmező -->
+                <div class="mb-3">
+                    <input type="text" id="search-input" class="form-control" placeholder="🔍 Keresés cím, leírás vagy ár alapján...">
+                </div>
+
+                <!-- Szűrők -->
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label>Min. Ár (M Ft):</label>
+                        <input type="number" id="min-price" class="form-control" placeholder="0">
+                    </div>
+                    <div class="col-md-3">
+                        <label>Max. Ár (M Ft):</label>
+                        <input type="number" id="max-price" class="form-control" placeholder="200">
+                    </div>
+                    <div class="col-md-3">
+                        <label>Szobák:</label>
+                        <select id="rooms-filter" class="form-control">
+                            <option value="">Összes</option>
+                            <option value="1">1 szoba</option>
+                            <option value="2">2 szoba</option>
+                            <option value="3">3 szoba</option>
+                            <option value="4">4+ szoba</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label>&nbsp;</label>
+                        <button id="clear-filters" class="btn btn-secondary btn-block w-100">🔄 Szűrők törlése</button>
+                    </div>
+                </div>
+
+                <!-- Hirdetések táblázat -->
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped" id="listings-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 30%">Cím</th>
+                                <th style="width: 10%">Ár</th>
+                                <th style="width: 8%">Terület</th>
+                                <th style="width: 8%">Szobák</th>
+                                <th style="width: 10%">Ár/m²</th>
+                                <th style="width: 24%">Leírás (részlet)</th>
+                                <th style="width: 10%">Művelet</th>
+                            </tr>
+                        </thead>
+                        <tbody id="listings-tbody">
+                            <!-- JavaScript tölti fel -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Találatok száma -->
+                <div class="alert alert-secondary mt-3">
+                    <strong>Találatok:</strong> <span id="filtered-count">0</span> hirdetés
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Folium térkép JavaScript -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<script>
+// Globális változók
+let allListings = [];
+let currentDistrict = null;
+let map = null;
+
+// Térkép inicializálása
+function initMap() {
+    map = L.map('map', {
+        attributionControl: false,  // Attribution jelölő eltávolítása
+        zoomControl: false  // Zoom gombok eltávolítása
+    }).setView([47.4979, 19.0402], 11);
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    
+    // GeoJSON betöltése
+    fetch("{{ url_for('static', filename='budapest_districts.geojson') }}")
+        .then(response => response.json())
+        .then(data => {
+            // Hirdetések száma kerületenként
+            fetch('/api/districts-summary')
+                .then(res => res.json())
+                .then(summary => {
+                    L.geoJSON(data, {
+                        pointToLayer: function(feature, latlng) {
+                            return null; // Tiltsa le a marker-eket
+                        },
+                        filter: function(feature) {
+                            // Csak polygon-okat engedélyezzünk
+                            return feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon';
+                        },
+                        style: {
+                            fillColor: 'yellow',
+                            color: 'black',
+                            weight: 1,
+                            fillOpacity: 0.3
+                        },
+                        onEachFeature: function(feature, layer) {
+                            const districtName = feature.properties.name || feature.properties.admin_leve;
+                            const count = summary[districtName] || 0;
+                            
+                            // Tooltip a hirdetésszámmal
+                            layer.bindTooltip(`<b>${districtName}</b><br>Aktív hirdetések: ${count} db`, {
+                                permanent: false,
+                                sticky: true,
+                                direction: 'auto'
+                            });
+                            
+                            // Hover highlight
+                            layer.on('mouseover', function() {
+                                layer.setStyle({
+                                    fillColor: 'orange',
+                                    fillOpacity: 0.7,
+                                    weight: 3,
+                                    color: 'red'
+                                });
+                            });
+                            
+                            layer.on('mouseout', function() {
+                                layer.setStyle({
+                                    fillColor: 'yellow',
+                                    fillOpacity: 0.3,
+                                    weight: 1,
+                                    color: 'black'
+                                });
+                            });
+                            
+                            // Kattintás event
+                            layer.on('click', function() {
+                                loadDistrictListings(districtName);
+                            });
+                        }
+                    }).addTo(map);
+                });
+        })
+        .catch(err => console.error('GeoJSON hiba:', err));
+}
+
+// Kerület hirdetéseinek betöltése
+function loadDistrictListings(district) {
+    currentDistrict = district;
+    document.getElementById('district-name').textContent = district;
+    document.getElementById('listings-section').style.display = 'block';
+    
+    // Scroll a listához
+    document.getElementById('listings-section').scrollIntoView({ behavior: 'smooth' });
+    
+    // API hívás
+    fetch(`/api/listings-by-district?district=${encodeURIComponent(district)}`)
+        .then(response => response.json())
+        .then(data => {
+            allListings = data.listings;
+            document.getElementById('listings-count').textContent = allListings.length;
+            renderListings(allListings);
+        })
+        .catch(err => {
+            console.error('API hiba:', err);
+            alert('Hiba történt a hirdetések betöltésekor!');
+        });
+}
+
+// Hirdetések megjelenítése
+function renderListings(listings) {
+    const tbody = document.getElementById('listings-tbody');
+    tbody.innerHTML = '';
+    
+    if (listings.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Nincs találat a megadott szűrők alapján.</td></tr>';
+        document.getElementById('filtered-count').textContent = '0';
+        return;
+    }
+    
+    listings.forEach(listing => {
+        const row = document.createElement('tr');
+        
+        // Ár formázás
+        const priceM = (listing.price_huf / 1000000).toFixed(1);
+        const pricePerSqm = listing.price_per_sqm ? Math.round(listing.price_per_sqm) : 'N/A';
+        
+        // Leírás rövidítés
+        const descShort = listing.description ? 
+            (listing.description.length > 100 ? listing.description.substring(0, 100) + '...' : listing.description) : 
+            'Nincs leírás';
+        
+        row.innerHTML = `
+            <td><strong>${listing.title || 'Nincs cím'}</strong></td>
+            <td class="text-end"><strong>${priceM} M Ft</strong></td>
+            <td class="text-center">${listing.area_sqm || 'N/A'} m²</td>
+            <td class="text-center">${listing.rooms || 'N/A'}</td>
+            <td class="text-end">${pricePerSqm.toLocaleString()} Ft/m²</td>
+            <td><small class="text-muted">${descShort}</small></td>
+            <td>
+                <a href="${listing.link}" target="_blank" class="btn btn-primary btn-sm">
+                    🔗 Megtekintés
+                </a>
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+    
+    document.getElementById('filtered-count').textContent = listings.length;
+}
+
+// Keresés és szűrés
+function filterListings() {
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const minPrice = parseFloat(document.getElementById('min-price').value) * 1000000 || 0;
+    const maxPrice = parseFloat(document.getElementById('max-price').value) * 1000000 || Infinity;
+    const roomsFilter = document.getElementById('rooms-filter').value;
+    
+    const filtered = allListings.filter(listing => {
+        // Szöveges keresés
+        const matchesSearch = !searchTerm || 
+            (listing.title && listing.title.toLowerCase().includes(searchTerm)) ||
+            (listing.description && listing.description.toLowerCase().includes(searchTerm)) ||
+            (listing.price_huf && listing.price_huf.toString().includes(searchTerm));
+        
+        // Ár szűrés
+        const matchesPrice = listing.price_huf >= minPrice && listing.price_huf <= maxPrice;
+        
+        // Szobák szűrés
+        const matchesRooms = !roomsFilter || 
+            (roomsFilter === '4' ? listing.rooms >= 4 : listing.rooms == roomsFilter);
+        
+        return matchesSearch && matchesPrice && matchesRooms;
+    });
+    
+    renderListings(filtered);
+}
+
+// Event listenerek
+document.addEventListener('DOMContentLoaded', function() {
+    initMap();
+    
+    // Keresés input
+    document.getElementById('search-input').addEventListener('input', filterListings);
+    
+    // Szűrők
+    document.getElementById('min-price').addEventListener('input', filterListings);
+    document.getElementById('max-price').addEventListener('input', filterListings);
+    document.getElementById('rooms-filter').addEventListener('change', filterListings);
+    
+    // Szűrők törlése
+    document.getElementById('clear-filters').addEventListener('click', function() {
+        document.getElementById('search-input').value = '';
+        document.getElementById('min-price').value = '';
+        document.getElementById('max-price').value = '';
+        document.getElementById('rooms-filter').value = '';
+        if (allListings.length > 0) {
+            renderListings(allListings);
+        }
+    });
+});
+</script>
+
+<style>
+#listings-section {
+    animation: fadeIn 0.5s;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+#listings-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#listings-table tbody tr:hover {
+    background-color: #f8f9fa !important;
+}
+
+.leaflet-popup-content-wrapper {
+    border-radius: 8px;
+}
+
+/* Kattintáskor megjelenő négyzet eltávolítása */
+.leaflet-interactive {
+    outline: none !important;
+}
+
+path.leaflet-interactive:focus {
+    outline: none !important;
+}
+
+svg.leaflet-zoom-animated {
+    outline: none !important;
+}
+</style>
+{% endblock %}

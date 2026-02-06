@@ -42,6 +42,11 @@ venv.bak/
 .env
 .env.local
 
+# GCP Credentials (SENSITIVE!)
+gcp-credentials.json
+*-credentials.json
+*.json.backup
+
 # Logs
 *.log
 logs/

@@ -1,711 +1,481 @@
-# 🏘️ Budapest Ingatlan Ártrend Elemző és Predikciós Rendszer
+# Budapest Ingatlan Elemző Platform
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker)](https://www.docker.com/)
-[![LLM](https://img.shields.io/badge/LLM-Llama--3.2--3B-green)](https://ollama.ai/)
-[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis)](https://redis.io/)
-[![Status](https://img.shields.io/badge/Status-Production_Ready-success)](https://github.com)
+> LLM-alapú ingatlanhirdetés feldolgozás, szűrés és árpredikció - Szakdolgozat projekt
 
-## 📝 Projekt Áttekintés
+## 📋 Tartalomjegyzék
 
-Production-ready ingatlan elemző rendszer Budapest lakáspiacának automatizált elemzésére és árpredikcióra. A platform **8 komplex optimalizációval** ellátott, kombinálva gépi tanulást (ML), nagy nyelvi modelleket (LLM) és intelligens cache mechanizmust a **12,750+ hirdetés** hatékony feldolgozásához.
+- [Projekt Áttekintés](#projekt-áttekintés)
+- [Főbb Funkciók](#főbb-funkciók)
+- [Technológiai Stack](#technológiai-stack)
+- [Telepítés és Indítás](#telepítés-és-indítás)
+- [Használat](#használat)
+- [Architektúra](#architektúra)
+- [Admin Funkciók](#admin-funkciók)
+- [API Endpoints](#api-endpoints)
+- [Fejlesztés és Tesztelés](#fejlesztés-és-tesztelés)
 
-**🎉 Teljesítmény:**
-- **~85% gyorsítás** az eredeti verzióhoz képest
-- **99% LLM pontosság** a relevancia szűrésben
-- **11,310 releváns + 1,440 irreleváns** feldolgozott hirdetés
-- **48h cache TTL** azonnali válaszokkal ismétlődő leírásoknál
+---
 
-## ⚡ Főbb Funkciók
+## 🎯 Projekt Áttekintés
 
-### 🤖 **Intelligens Hirdetésszűrés (99% pontosság)**
-- **LLM-alapú relevanciaszűrés**: Llama-3.2-3B-Instruct modell strukturált adatkinyeréssel
-- **ML Worker Filter**: TF-IDF + Cosine Similarity előszűrés (20-30% kevesebb LLM hívás)
-- **Batch processing**: 3 cikk/LLM hívás, 70% kevesebb HTTP overhead
-- **Intelligens Cache**: SHA256 hash alapú Redis cache, 48h TTL, admin UI
-- **Connection pooling**: Persistent HTTP sessions, 30-40% gyorsabb válaszidő
+Ez a platform Budapest ingatlanhirdetéseit dolgozza fel nagy nyelvi modell (LLM) segítségével. A rendszer képes:
 
-### 📊 **Ártrend Elemzés & Predikció**
-- **Történeti vizualizáció**: Chart.js interaktív grafikonok
-- **6 hónapos prognózis**: Lineáris regresszió áralakulási trenddel
-- **XGBoost & Random Forest**: Automatikus modell kiválasztás feature importance-szal
-- **Kerület/területméret szűrés**: Dinamikus lekérdezések DuckDB-vel
+- **Automatikus szűrésre**: Releváns/irreleváns hirdetések elválasztása
+- **Adatkinyerésre**: Szöveges leírásokból strukturált adatok (alapterület, szobaszám, stb.)
+- **Árpredikció**: Machine Learning alapú árbecsülés
+- **Térbeli analízis**: Budapest kerületek szerint csoportosított adatok
+- **Interaktív vizualizáció**: Térképes megjelenítés, ártrendek, statisztikák
 
-### 🗺️ **Interaktív Térkép**
-- **Folium térkép**: Budapest kerületeinek színkódolt megjelenítése
-- **GeoJSON határok**: Pontosság maximalizálása OSM adatokkal
-- **Kattintható kerületek**: Azonnali statisztikák
+**Használati eset:** Nagyobb ingatlanközvetítő cégek, piackutatók, befektetők számára hasznos eszköz a budapesti lakáspiac gyors áttekintésére és elemzésére.
 
-### 🔍 **SQL & Természetes Nyelvi Lekérdezés**
-- **DuckDB analitika**: Gyors aggregációk és szűrések
-- **LLM-powered chat**: Natural language → SQL konverzió
+---
 
-### 👨‍💼 **Admin Dashboard**
-- **Session-based autentikáció**: Védett admin funkciók
-- **Cache menedzsment**: Real-time hit rate, memória monitoring, törlés gomb
-- **ML újratanítás**: Worker filter model frissítés egy kattintással
-- **Teszt mód**: 100 worker + 50 LLM gyors validációhoz
-- **Inkrementális reset**: Metadata törlés teljes újrafeldolgozáshoz
-- ## 🚀 Implementált Optimalizációk (8/8 ✅)
+## ✨ Főbb Funkciók
 
-### 1. ✅ Batch LLM Feldolgozás
-- **3 cikk/kérés**: 70% kevesebb HTTP overhead
-- **Pydantic validáció**: Strukturált JSON parsing LLM hallucináció ellen
-- **Async batch assembly**: Intelligens cikk csoportosítás
+### 🤖 LLM-alapú Feldolgozás
 
-### 2. ✅ Redis Intelligens Cache
-- **SHA256 hash alapú**: Duplikált leírások azonnali felismerése
-- **48h TTL**: Automatikus cache évülés
-- **Admin UI**: Real-time hit/miss rate, memória használat, manuális törlés
+- **Ollama** lokális LLM inference (llama3.2:3b, mistral:7b modellek)
+- **Redis cache**: LLM válaszok gyorsítótárazása (költségcsökkentés + sebesség)
+- **Inkrementális feldolgozás**: Csak új hirdetések elemzése
+- **Parallel processing**: Airflow + Celery workers párhuzamos végrehajtás
 
-### 3. ✅ Async HTTP + Connection Pooling
-- **aiohttp + asyncio**: Non-blocking I/O párhuzamos LLM hívásokhoz
-- **100 max connections**: Persistent HTTP sessions TCP újrafelhasználással
-- **60s keepalive**: Hosszú távú kapcsolatok fenntartása
-- **30-40% gyorsabb** válaszidő
+### 📊 Adatkezelés és Megjelenítés
 
-### 4. ✅ ML Worker Filter (TF-IDF)
-- **Cosine Similarity alapú előszűrés**: Szemantikus hasonlóság detektálás
-- **Auto-training**: LLM decision log-ból tanulás
-- **20-30% kevesebb LLM hívás**: Irreleváns cikkek korai kiszűrése
-- **Redis perzisztencia**: Modell újrahasznosítás újraindításkor
+- **27,000+ hirdetés** (core_data.parquet - GCP Cloud Storage-ból letölthető)
+- **DuckDB SQL lekérdezések**: Gyors adatelemzés parquet fájlokon
+- **Interaktív térképek**: Leaflet.js + GeoJSON Budapest kerülethatárok
+- **Szűrhető adattáblák**: Bootstrap DataTables + backend pagináció
 
-### 5. ✅ Memory-Mapped Parquet Streaming
-- **PyArrow memory-mapping**: 80-90% kevesebb RAM használat
-- **50k chunk streaming**: Automatikus batch méret optimalizáció
-- **Scalable**: >1GB fájlok feldolgozása 4GB RAM-mal
+### 🎯 ML Árpredikció
 
-### 6. ✅ Inkrementális Feldolgozás
-- **SHA256 change detection**: description+title+price+area+district hash
-- **Metadata persistence**: `processing_metadata.json` Redis-ben
-- **60-90% időmegtakarítás**: Csak új/módosult cikkek újrafeldolgozása
-- **Admin reset**: Teljes újrafeldolgozás egy gombnyomással
+- **RandomForestRegressor** modell
+- **Jellemzők**: kerület, alapterület, szobaszám, ár/m², építési év, emelet
+- **Metrikák**: R², MAE, MAPE
+- **Model persistencia**: Pickle (.pkl) fájl tárolás
 
-### 7. ✅ Real-time Progress Tracking
-- **WebSocket (Socket.IO)**: Live dashboard frissítés
-- **Prediktív ETA**: items/sec alapú becslés adaptív formázással
-- **localStorage**: Task folytatás oldal refresh után
-- **Dual-phase progress**: Worker előszűrés (0-50%) + LLM batch (50-100%)
+### ☁️ Cloud Integráció
 
-### 8. ✅ RQ Háttérfeldolgozás
-- **2x RQ worker**: Parallel processing Redis Queue-val
-- **Background task isolation**: Flask app és worker szeparáció
-- **Graceful timeout**: 2h job timeout nagy adathalmazokhoz
-- **Task persistence**: Redis-based állapotkövetés
+- **GCP Storage**: Automatikus parquet file szinkronizáció
+- **Version checking**: Lokális vs. cloud fájl összehasonlítás
+- **One-click download**: Admin dashboardról frissítés
 
-### 📈 Összesített Teljesítmény
-- **85% gyorsabb** az eredeti verzióhoz képest
-- **99% LLM pontosság** 10k+ tesztelési adat alapján
-- **Production-ready**: Docker Compose 5 service-szel (app, 2x worker, redis, ollama)
+---
+
 ## 🛠️ Technológiai Stack
 
-### Backend & Framework
-- **Python 3.10+**: Fő programozási nyelv
-- **Flask 3.x**: Web framework
-- **Flask-SocketIO**: WebSocket real-time kommunikáció
-- **RQ (Redis Queue)**: Háttérfeladat-kezelés 2 worker-rel
-- **Redis 7**: Cache, message broker, metadata persistence
+### Backend
+- **Flask 3.0** - Web framework
+- **Apache Airflow 2.10** - Workflow orchestration
+- **Redis 7.4** - Cache + Celery broker
+- **Ollama** - LLM inference server
+- **DuckDB** - Parquet SQL queries
+- **Pandas + PyArrow** - Adatfeldolgozás
 
-### Data Processing
-- **Pandas & PyArrow**: Memory-mapped Parquet streaming
-- **DuckDB**: Gyors in-memory analitikai lekérdezések
-- **Pydantic**: JSON séma validáció és type checking
+### Frontend
+- **Bootstrap 5** - UI komponensek
+- **Leaflet.js** - Térképes megjelenítés
+- **Chart.js** - Grafikonok (ártrendek)
+- **Jinja2** - Template engine
 
-### AI & Machine Learning
-- **Ollama + Llama-3.2-3B-Instruct**: Lokális LLM szerveroldali inferencia
-- **Scikit-learn**: TF-IDF vectorization, ML worker filter
-- **XGBoost**: Gradiens boosting árpredikció
-- **Random Forest**: Alternatív predikciós modell
-- **NumPy**: Numerikus számítások
+### Infrastructure
+- **Docker + Docker Compose** - Konténerizáció
+- **PostgreSQL** - Airflow metadata DB
+- **NVIDIA GPU** - LLM inference gyorsítás (opcionális)
 
-### Async & Networking
-- **aiohttp**: Async HTTP client connection pooling-gal
-- **asyncio**: Non-blocking I/O event loop
-
-### Vizualizáció
-- **Folium**: Interaktív térképek GeoJSON-nal
-- **Chart.js**: Client-side responsive grafikonok
-- **Bootstrap 5**: Modern UI framework
-
-### Infrastruktúra
-- **Docker & Docker Compose**: Multi-container orchestration
-- **NVIDIA GPU**: CUDA támogatás LLM inferenciához
-
-## 📋 Rendszerkövetelmények
-
-### Minimális
-- **Docker** 20.10+
-- **Docker Compose** 2.0+
-- **RAM**: 8GB
-- **Storage**: 20GB szabad tárhely
-- **CPU**: 4 mag
-
-### Ajánlott Production
-- **NVIDIA GPU** CUDA támogatással (GTX 1660 Ti vagy jobb)
-- **RAM**: 16GB+
-- **Storage**: SSD 50GB+ szabad tárhely
-- **CPU**: 8+ mag
+---
 
 ## 🚀 Telepítés és Indítás
 
-### 1. Projekt Klónozása
+### Előfeltételek
+
+```bash
+# Szükséges szoftverek:
+- Docker Desktop (Windows/Mac) vagy Docker Engine (Linux)
+- Git
+- NVIDIA GPU + NVIDIA Container Toolkit (opcionális, LLM gyorsításhoz)
+```
+
+### 1. Repository klónozása
+
 ```bash
 git clone <repository-url>
 cd thesis_project
 ```
 
-### 2. Környezeti Változók (Opcionális)
-A `.env` fájlban alapértelmezett beállítások:
+### 2. GCP Credentials beállítása
+
+**Service Account JSON kulcs** szükséges a GCP Storage eléréséhez:
+
+1. Hozz létre service accountot a [GCP Console](https://console.cloud.google.com/iam-admin/serviceaccounts)-ban
+2. Role: **Storage Object Viewer**
+3. Töltsd le a JSON kulcsot
+4. Másold a projekt gyökérbe `gcp-credentials.json` néven
+
+```bash
+# Példa:
+cp ~/Downloads/thesis-work-474807-d60c5ba9a8d4.json ./gcp-credentials.json
+```
+
+### 3. Environment fájl (opcionális)
+
+Hozz létre `.env` fájlt saját jelszavakkal:
+
 ```env
-OLLAMA_HOST=http://ollama:11434
-REDIS_HOST=redis
-SECRET_KEY=your_very_long_random_secret_key_here_change_in_production
 ADMIN_PASSWORD=SzuperTitkosJelszo2025!
+SECRET_KEY=your_very_long_random_secret_key_here
+AIRFLOW__WEBSERVER__SECRET_KEY=another_long_secret_key
 ```
 
-### 3. Adatfájl Elhelyezése
+### 4. Docker konténerek indítása
+
 ```bash
-# Helyezd a core_data.parquet fájlt a projekt gyökerébe
-cp /path/to/core_data.parquet ./
+# Első indítás - Airflow adatbázis inicializálás
+docker-compose up airflow-init
+
+# Ollama modellek letöltése (egyszer kell futtatni)
+docker-compose up -d ollama
+docker exec -it thesis_project-ollama-1 ollama pull llama3.2:3b
+docker exec -it thesis_project-ollama-1 ollama pull mistral:7b
+
+# Teljes stack indítása
+docker-compose up -d
+
+# Logok követése
+docker-compose logs -f app
 ```
 
-### 4. Docker Containerek Indítása
-```bash
-# Build és indítás
-docker-compose up --build -d
+### 5. Alkalmazás elérése
 
-# Log követés
-docker-compose logs -f
+| Szolgáltatás | URL | Leírás |
+|--------------|-----|--------|
+| **Flask App** | http://localhost:5001 | Főalkalmazás |
+| **Airflow Web UI** | http://localhost:8081 | DAG monitorozás |
+| **Ollama API** | http://localhost:11434 | LLM szerver |
 
-# Szolgáltatások ellenőrzése
-docker-compose ps
+**Admin bejelentkezés**: `admin` / `SzuperTitkosJelszo2025!`
+
+---
+
+## 📖 Használat
+
+### Első Lépések
+
+1. **Bejelentkezés**: http://localhost:5001/login
+2. **Admin Dashboard**: http://localhost:5001/admin
+3. **GCP Adatletöltés**:
+   - Kattints: "🔍 Frissítés Ellenőrzése"
+   - Ha újabb verzió van: "⬇️ Letöltés GCP-ből"
+4. **Modulok Tesztelése**: "🚀 Összes Modul Tesztelése" gomb
+5. **LLM Feldolgozás**: "🚀 Adatfeldolgozás Indítása"
+
+### Főbb Oldalak
+
+#### 📊 Adattábla (`/data`)
+- Szűrés kerület, ár, alapterület szerint
+- Hivatkozások az eredeti hirdetésekhez
+- Export funkcionalitás
+
+#### 🗺️ Interaktív Térkép (`/map-interactive`)
+- Budapesti kerületek GeoJSON ábrázolása
+- Hover tooltip: kerület név + aktív hirdetések száma
+- Dinamikus színezés hirdetésszám alapján
+
+#### 📈 Ártrendek (`/price-trends`)
+- Kerületenkénti átlagárak
+- Heatmap vizualizáció
+- Időbeli változások nyomon követése
+
+#### 🔮 Árkalkulátor (`/prediction`)
+- ML modell alapú árbecsülés
+- Input: kerület, m², szobaszám, emelet, építési év
+- Output: becsült ár (millió Ft) + megbízhatósági intervallum
+
+#### 📈 Statisztikák (`/stats`)
+- Feldolgozott/releváns/irreleváns hirdetések száma
+- Cache találati arány
+- Kerületenkénti megoszlások
+
+---
+
+## 🏗️ Architektúra
+
+### Komponens Diagram
+
+```
+┌─────────────┐      ┌──────────────┐      ┌─────────────┐
+│   Browser   │─────▶│  Flask App   │─────▶│   Ollama    │
+│             │◀─────│  (port 5001) │◀─────│  LLM Server │
+└─────────────┘      └──────┬───────┘      └─────────────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │    Redis     │
+                     │  (Cache +    │
+                     │   Broker)    │
+                     └──────┬───────┘
+                            │
+                            ▼
+                     ┌──────────────┐      ┌─────────────┐
+                     │   Airflow    │─────▶│  PostgreSQL │
+                     │  Scheduler   │◀─────│  (Metadata) │
+                     └──────┬───────┘      └─────────────┘
+                            │
+                            ▼
+                     ┌──────────────┐
+                     │Celery Workers│
+                     │ (2x parallel)│
+                     └──────────────┘
 ```
 
-### 5. Alkalmazás Elérése
-- **Web App**: http://localhost:5001
-- **Admin Dashboard**: http://localhost:5001/admin
-- **Ollama API**: http://localhost:11434
-
-### 6. Első Bejelentkezés (Admin)
-- **URL**: http://localhost:5001/login
-- **Jelszó**: `SzuperTitkosJelszo2025!` (változtasd production-ban!)
-
-### 7. Leállítás
-```bash
-docker-compose down         # Containerek leállítása
-docker-compose down -v      # Containerek + volumes törlése (tiszta újraindítás)
-```
-
-## 📖 Használati Útmutató
-
-### 1️⃣ Admin Bejelentkezés
-1. Menj a http://localhost:5001/login
-2. Add meg a jelszót: `SzuperTitkosJelszo2025!`
-3. Nyílik az admin vezérlőpult
-
-### 2️⃣ Adatfeldolgozás Indítása
-
-**Teljes Feldolgozás:**
-- Kattints a **"LLM Adatfeldolgozás Indítása"** gombra (kék)
-- Real-time dashboard követi a haladást:
-  - Worker előszűrés: 0-50%
-  - LLM batch elemzés: 50-100%
-  - ETA, feldolgozási sebesség, processed/relevant/irrelevant számlálók
-- Várható idő: ~30-60 perc 12k+ hirdetésnél (GPU-tól függően)
-
-**🧪 Teszt Mód (Gyors Validáció):**
-- Kattints a **"🧪 TESZT Futtatás (50 LLM)"** gombra (sárga)
-- Csak 100 cikk worker + 50 LLM elemzés
-- Tökéletes új modellek/prompts tesztelésére
-- Várható idő: ~2-5 perc
-
-### 3️⃣ Statisztikák Megtekintése
-**URL**: `/stats`
-- Releváns vs irreleváns hirdetések száma
-- Queue státusz (pending/failed jobs)
-- Feldolgozási összefoglaló
-
-### 4️⃣ Ártrend Elemzés
-**URL**: `/price-trends`
-- Válassz kerületet (pl. V. kerület)
-- Állítsd be területméret szűrőket (30-100 m²)
-- Interaktív Chart.js grafikon 6 hónapos prognózissal
-
-### 5️⃣ ML Árpredikció
-**URL**: `/prediction`
-1. Válassz ingatlan típust (lakás/ház)
-2. Add meg a paramétereket:
-   - Terület (m²)
-   - Szobák száma
-   - Kerület
-   - Állapot (újépítésű/felújított/átlagos)
-3. Kapd meg a prediktált árat konfidencia-intervallummal
-
-### 6️⃣ Admin Dashboard (védett)
-**URL**: `/admin`
-
-**Cache Menedzsment** (`/admin/cache`):
-- 📊 Real-time cache hit rate
-- 💾 Memória használat monitoring
-- 🗑️ Cache törlés gomb
-- 🔌 Connection pool statisztikák
-
-**ML Worker Filter** (`/admin/ml`):
-- 🎯 Relevant/irrelevant minták száma
-- 📈 Confidence rate
-- 🔄 Model újratanítás gomb
-
-**Inkrementális Feldolgozás** (`/admin/incremental`):
-- 📅 Utolsó feldolgozás időpontja
-- 📝 Tracked articles száma
-- 🔄 Metadata reset (teljes újrafeldolgozás)## 📂 Projekt Struktúra
+### Fájlstruktúra
 
 ```
 thesis_project/
-├── app/                                # Fő alkalmazás könyvtár
-│   ├── webapp.py                       # Flask app + admin endpoints + auth
-│   ├── background_tasks.py             # RQ worker feldolgozási logika
-│   ├── task_manager.py                 # Progress tracking, ETA számítás
-│   ├── llm_cache.py                    # Redis SHA256 cache kezelő
-│   ├── connection_pool.py              # HTTP session pooling manager
-│   ├── parquet_streaming.py            # PyArrow memory-mapped reader
-│   ├── incremental_processing.py       # Hash-based change detection
-│   ├── ml_worker_filter.py             # TF-IDF ML előszűrés
-│   ├── models.py                       # Pydantic validation schemák
-│   ├── price_trends.py                 # Ártrend számítás és vizualizáció
-│   ├── train_model.py                  # XGBoost/RF modell tréning
-│   ├── districts_features.py           # Budapest kerület adatok
-│   ├── start_worker.py                 # RQ worker inicializálás
-│   ├── main.py                         # Legacy standalone script
-│   ├── *.html                          # Flask Jinja2 templates
-│   └── static/                         # Statikus fájlok (GeoJSON, map)
-│       ├── budapest_districts.geojson
-│       └── map_render.html
-├── parquet/                            # Feldolgozott adatok
-│   ├── core_layer_filtered.parquet     # 11,310 releváns hirdetés
-│   └── core_layer_irrelevant.parquet   # 1,440 irreleváns hirdetés
-├── scripts/                            # Utility scriptek
-│   └── osm_boundary_to_geojson.py      # Térkép adatok konverzió
-├── docker-compose.yml                  # Multi-container orchestration
-├── Dockerfile                          # Python app image
-├── requirements.txt                    # Python dependencies
-├── llm_decisions_log.csv               # LLM döntések log (ML training data)
-├── model_metrics.json                  # XGBoost/RF teljesítmény metrikák
-├── price_prediction_model.pkl          # Trained árpredikciós modell
-├── ASYNC_IMPLEMENTATION.md             # Async design dokumentáció
-├── USAGE_GUIDE.md                      # Részletes használati útmutató
-└── README.md                           # Ez a fájl
+├── app/                          # Flask alkalmazás
+│   ├── webapp.py                 # Fő backend (1200+ sor)
+│   ├── *.html                    # Jinja2 templates
+│   ├── airflow_api.py            # Airflow REST API kliens
+│   ├── llm_cache.py              # Redis cache wrapper
+│   ├── incremental_processing.py # Delta feldolgozás logika
+│   ├── ml_worker_filter.py       # ML modell wrapper
+│   └── static/                   # GeoJSON, CSS, JS
+├── dags/                         # Airflow DAG-ok
+│   └── ingatlan_pipeline_dag.py  # LLM feldolgozási workflow
+├── parquet/                      # Adatfájlok
+│   ├── core_data.parquet         # Nyers adatok (GCP-ből)
+│   ├── core_layer_filtered.parquet # Releváns hirdetések
+│   ├── core_layer_irrelevant.parquet # Irreleváns hirdetések
+│   └── price_model.pkl           # Tanított ML modell
+├── tests/                        # Unit tesztek
+├── docker-compose.yml            # Multi-container orchestration
+├── Dockerfile                    # Flask app image
+├── Dockerfile.airflow            # Airflow image
+├── requirements.txt              # Python dependencies
+└── README.md                     # Ez a dokumentáció
 ```
 
-### Docker Services (5 container)
+### Adatfolyam
+
+1. **Betöltés**: `core_data.parquet` → GCP Storage-ból → lokális parquet/
+2. **Feldolgozás**: Airflow DAG → Celery workers → Ollama LLM → Redis cache
+3. **Szűrés**: LLM döntés alapján → `core_layer_filtered.parquet` / `core_layer_irrelevant.parquet`
+4. **Modell tanítás**: Filtered data → RandomForestRegressor → `price_model.pkl`
+5. **Megjelenítés**: Flask routes → Jinja2 templates → Browser
+
+---
+
+## 🛠️ Admin Funkciók
+
+### GCP Adatfrissítés
+
+- **Ellenőrzés**: Összehasonlítja a lokális és GCP fájl timestamp-jét
+- **Letöltés**: Automatikus backup + validálás parquet integritásra
+- **Rollback**: Hiba esetén visszaállítja az előző verziót
+
+### Modulok Tesztelése
+
+Az "🔧 Modulok Tesztelése" szekció 6 komponenst ellenőriz:
+
+| Modul | Teszt | Sikeres kimenet |
+|-------|-------|-----------------|
+| 🗄️ Redis | `redis_client.ping()` | Redis 7.4.7 - Kapcsolat OK |
+| 🤖 Ollama | `/api/tags` endpoint | 2 modell elérhető: llama3.2:3b, mistral:7b |
+| 📊 Parquet | File existence + read | 27,943 sor, 22 oszlop (18.1 MB) |
+| ☁️ GCP | Storage bucket access | Bucket elérhető - Fájl: 18.1 MB |
+| 🌪️ Airflow | `/health` endpoint | Airflow healthy - OK |
+| 🎯 Model | pickle.load() | Modell betöltve - R²: 0.834, MAPE: 12.3% |
+
+### LLM Adatfeldolgozás
+
+**Teljes futtatás** (6-8 óra, ~27,000 hirdetés):
+```python
+POST /run-pipeline
+```
+
+**Workflow**:
+1. Core data beolvasása
+2. Inkrementális szűrés (csak új hirdetések)
+3. LLM inference (Ollama)
+4. Strukturált adatkinyerés (JSON parsing)
+5. Relevant/irrelevant szétválasztás
+6. Eredmények mentése
+
+### Cache Kezelés
+
+- **Törlés**: `POST /admin/cache/clear` → Redis FLUSHDB
+- **Statisztikák**: `GET /cache-admin` → Hits/misses, hit rate, kulcsok száma
+
+---
+
+## 🔌 API Endpoints
+
+### Publikus Endpoints
+
+| Method | Path | Leírás |
+|--------|------|--------|
+| GET | `/` | Főoldal (dashboard) |
+| GET | `/data` | Adattábla |
+| GET | `/map-interactive` | Interaktív térkép |
+| GET | `/price-trends` | Ártrendek |
+| GET | `/prediction` | Árkalkulátor form |
+| POST | `/predict` | ML predikció végrehajtása |
+| GET | `/stats` | Statisztikák |
+| GET | `/api/districts-summary` | Kerületek GeoJSON + hirdetésszám |
+
+### Admin Endpoints (bejelentkezés szükséges)
+
+| Method | Path | Leírás |
+|--------|------|--------|
+| POST | `/run-pipeline` | LLM feldolgozás indítása |
+| POST | `/train-model` | ML modell tanítása |
+| GET | `/admin/gcp/check-update` | GCP file verzió ellenőrzés |
+| POST | `/admin/gcp/download` | GCP file letöltés |
+| GET | `/admin/test-module/<module>` | Egyedi modul teszt |
+| POST | `/admin/cache/clear` | Cache törlése |
+
+---
+
+## 🧪 Fejlesztés és Tesztelés
+
+### Unit Tesztek Futtatása
+
+```bash
+# Docker konténeren belül
+docker exec -it thesis_project-app-1 pytest tests/ -v
+
+# Lokális környezetben (virtualenv)
+python -m pytest tests/ -v --cov=app
+```
+
+**Teszt lefedettség**:
+- `test_llm_cache.py` - Redis cache wrapper
+- `test_incremental_processing.py` - Delta logika
+- `test_task_manager.py` - Airflow task kezelés
+- `test_models.py` - Adatmodellek
+
+### Development Mode
+
+A Flask app automatikus újratöltéssel fut (debug=True):
+
+```python
+# webapp.py
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True)
+```
+
+Kód módosítás után a konténer automatikusan újraindul.
+
+### Logok
+
+```bash
+# Flask app logok
+docker-compose logs -f app
+
+# Airflow scheduler logok
+docker-compose logs -f airflow-scheduler
+
+# Összes szolgáltatás
+docker-compose logs -f
+```
+
+---
+
+## 🔧 Konfigurációs Lehetőségek
+
+### Environment Variables
+
+| Változó | Alapértelmezett | Leírás |
+|---------|----------------|--------|
+| `ADMIN_PASSWORD` | `SzuperTitkosJelszo2025!` | Admin bejelentkezési jelszó |
+| `SECRET_KEY` | `supersecretkey` | Flask session kulcs |
+| `OLLAMA_HOST` | `http://ollama:11434` | LLM szerver cím |
+| `REDIS_HOST` | `redis` | Redis szerver host |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `/workspace/gcp-credentials.json` | GCP service account kulcs |
+
+### Airflow Beállítások
+
 ```yaml
-services:
-  app:                    # Flask webapp (port 5001)
-  llm-data-worker:       # RQ worker x2 (parallel processing)
-  redis:                 # Cache + message broker (port 6379)
-  ollama:                # LLM server (port 11434)
-```🔄 Adatfeldolgozási Pipeline (Optimalizált)
-
-### 1. Adatbetöltés (Memory-Mapped)
-- **PyArrow streaming**: Memory-mapped Parquet olvasás 50k/batch
-- **Inkrementális szűrés**: SHA256 hash alapú change detection
-- Duplikáció kezelés article_id alapján
-- Automatikus chunk méret becslés
-
-### 2. ML Worker Előszűrés (0-50%)
-- **TF-IDF vectorization** + Cosine Similarity
-- Auto-training LLM log alapján
-- Redis perzisztens modell tárolás
-- Real-time progress tracking (ETA, sebesség)
-
-### 3. LLM Batch Elemzés (50-100%)
-- **4. Eredmény Mentés & Metadata Update
-- Releváns hirdetések: `core_layer_filtered.parquet`
-- Irreleváns hirdetések: `core_layer_irrelevant.parquet`
-- LLM döntések logja: `llm_decisions_log.csv`
-- **Incremental metadata**: `processing_metadata.json` (article hashes)
-
-### 5. ML Modell Tréning
-- Feature engineering
-- Modell összehasonlítás (XGBoost vs Random Forest)
-- Legjobb modell mentése pickle formátumban
-- Metrics mentése: `model_metrics.json`
-### 1. Adatbetöltés
-- Parquet fájl beolvasása Pandas-sal
-- Duplikáció kezelés article_id alapján
-- Adattisztítás és validáció
-
-### 2. LLM Elemzés
-- **Cache ellenőrzés**: SHA256 hash alapú cache lookup
-- **Aszinkron feldolgozás**: aiohttp + asyncio párhuzamos LLM hívásokhoz
-- Batch processing: 3 hirdetés/LLM hívás
-- Strukturált JSON kimenet
-- **Cache mentés**: Eredmények automatikus tárolása 48h TTL-lel
-- Hibakezelés és újrapróbálás
-
-### 3. Eredmény Mentés
-- Releváns hirdetések: `c## 🔌 API Végpontok
-
-### Publikus Endpointok
-| Endpoint | Metódus | Leírás |
-|----------|---------|--------|
-| `/` | GET | Főoldal dashboard |
-| `/login` | GET/POST | Admin bejelentkezés |
-| `/logout` | GET | Kijelentkezés |
-| `/stats` | GET | Statisztikák oldal |
-| `/data` | GET | Releváns/irreleváns hirdetések táblázat |
-| `/map` | GET | Interaktív Budapest térkép |
-| `/price-trends` | GET | Ártrend elemzés oldal |
-| `/analyze-trends` | POST | Ártrend számítás JSON API |
-| `/prediction` | GET/POST | ML árpredikció |
-| `/query` | GET | SQL/Chat lekérdezés felület |
-| `/sql-query` | POST | DuckDB SQL futtatás |
-| `/chat-query` | POST | Natural language → SQL |
-
-### Admin Endpointok (védett, session-based auth)
-| Endpoint | Metódus | Leírás |
-|----------|---------|--------|
-| `/admin` | GET | Admin dashboard |
-| `/run-pipeline` | POST | **Teljes feldolgozás indítása** |
-| `/run-pipeline-test` | POST | **🧪 Teszt futtatás (100+50 limit)** |
-| `/admin/cache` | GET | Cache admin UI |
-| `/admin/cache/stats` | GET | Cache statisztikák JSON |
-| `/admin/cache/clear` | POST | Redis cache törlése |
-| `/admin/connection/stats` | GET | Connection pool info |
-| `/admin/incremental/stats` | GET | Incremental processing info |
-| `/admin/incremental/reset` | POST | Metadata reset (teljes újrafeldolgozás) |
-| `/admin/ml/stats` | GET | ML worker filter statisztikák |
-| `/admin/ml/retrain` | POST | ML model újratanítása |
-
-### Real-time Tracking
-| Endpoint | Protocol | Leírás |
-|----------|----------|--------|
-| `/task-status/<task_id>` | GET | Task állapot JSON API |
-| `/socket.io/` | WebSocket | Socket.IO real-time progress push |
-
-### Példa Használat
-```bash
-# Admin login
-curl -X POST http://localhost:5001/login \
-  -H "Content-Type: application/json" \
-  -d '{"password": "SzuperTitkosJelszo2025!"}'
-
-# Feldolgozás indítása (session cookie szükséges)
-curl -X POST http://localhost:5001/run-pipeline \
-  -H "Cookie: session=..." \
-  -H "Content-Type: application/json"
-
-# Task állapot lekérés
-curl http://localhost:5001/task-status/abc-123-def
-
-# Cache stats
-curl http://localhost:5001/admin/cache/stats
+# docker-compose.yml
+environment:
+  - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+  - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+  - AIRFLOW__CORE__LOAD_EXAMPLES=false
 ```
 
-### 4. ML Modell Tréning
-- Feature engineering
-- Modell összehasonlítás (XGBoost vs Random Forest)
-- Legjobb modell mentése pickle formátumban
+---
 
-## API Végpontok
+## 📝 Troubleshooting
 
-| Endpoint | Metódus | Leírás |
-|----------|---------|--------|
-| `/` | GET | Főoldal |
-| `/run-pipeline` | POST | Adatfeldolgozás indítása |
-| `/stats` | GET | Statisztikák megjelenítése |
-| `/data` | GET | Adattábla böngészés |
-| `/map` | GET | Interaktív térkép |
-| `/price-trends` | GET | Ártrend elemzés oldal |
-| `/analyze-trends` | POST | Ártrend számítás |
-| `/prediction` | GET/POST | ML predikció |
-| `/query` | GET | Lekérdezés felület |
-| `/sql-query` | POST | SQL lekérdezés |
-| `/chat-query` | POST | Természetes nyelvi lekérdezés |
-| `/admin/cache` | GET | Cache admin felület |
-| `/admin/cache/stats` | GET | Cache statisztikák JSON |
-| `/🚀 Teljesítmény Optimalizációk (8/8 KÉSZ)
+### Gyakori Problémák
 
-#### 1. ✅ Batch LLM Feldolgozás
-- **3 cikk/LLM kérés**: 70% kevesebb HTTP request
-- Intelligens batch assembly Pydantic validációval
-- Strukturált JSON output parsing
-
-#### 2. ✅ Intelligens Cache Rendszer
-- **SHA256 hash alapú cache**: Azonos leírások instant felismerése
-- **48 órás TTL**: Automatikus cache tisztítás
-- **Redis backend**: Gyors, perzisztens tárolás
-- **Admin interface**: Real-time hit rate monitoring
-
-#### 3. ✅ Async LLM Hívások
-- **aiohttp + asyncio**: Non-blocking I/O műveletek
-- **asyncio.gather()**: Párhuzamos batch feldolgozás
-- Backward compatible szinkron wrapper
-- Optimalizált error handling
-
-#### 4. ✅ Smart Worker Szűrés (ML-based)
-- **TF-IDF + Cosine Similarity**: Szemantikus hasonlóság alapú szűrés
-- **Auto-training**: LLM decision log alapján
-- **20-30% kevesebb LLM hívás**: Irreleváns cikkek korai kiszűrése
-- Redis model persistence
-
-#### 5. ✅ Memory Mapping & Chunked Processing
-- **PyArrow memory-mapped reader**: 80-90% kevesebb RAM használat
-- **50k sor/batch**: Automatikus chunk méret optimalizáció
-- Streaming unique article extraction
-- Skálázható >1GB Parquet fájlokra
-
-#### 6. ✅ Connection Pooling
-- **Persistent HTTP sessions**: TCP connection újrafelhasználás
-- **100 max connections, 30/host**: Optimalizált connection limits
-- **60s keepalive**: Hosszú távú kapcsolatok fenntartása
-- **30-40% gyorsabb LLM hívások**
-
-#### 7. ✅ Prediktív Progress Tracking
-- **Real-time ETA számítás**: items/sec alapú becslés
-- **Adaptive formatting**: Automatikus s/perc/óra megjelenítés
-- **Dashboard metrikák**: Eltelt idő, hátralévő idő, feldolgozási sebesség
-- **WebSocket live updates**: Socket.IO real-time push
-
-#### 8. ✅ Inkrementális Feldolgozás
-- **SHA256 hash-based change detection**: description+title+price+area+district
-- **Metadata persistence**: JSON fájl Redis-ben tracked articles-el
-- **60-90% időmegtakarítás**: Csak új/módosult cikkek feldolgozása
-- **Admin reset**: Lehetőség teljes újrafeldolgozásra
-
-#### 📊 Monitoring & Real-time Tracking
-- **Task Manager**: Redis-based progress persistence
-- **WebSocket dashboard**: Live ETA, sebesség, progress bar
-- **localStorage**: Task folytatás oldal frissítés után
-- **Cache metrics**: HIT/MISS rate, memory usage
-- **Connection stats**: Pool status, active connections
-- **Incremental stats**: Last processing, tracked articles coun
-
-### Teljesítmény Optimalizációk
-
-#### 💾 Cache Rendszer
-- **SHA256 hash alapú cache**: Azonos leírások automatikus felismerése
-- **48 órás TTL**: Automatikus cache tisztítás
-- **Redis backend**: Gyors, perzisztens tárolás
-- **Cache statisztikák**: Real-time hit rate monitoring
-
-#### 🚀 Feldolgozási Optimalizációk
-- **Két-fázisú pipeline**: Worker előszűrés (0-50%) + LLM batch (50-100%)
-- **Batch processing**: 3 hirdetés/LLM hívás csökkenti a hálózati overhead-et
-- **Async I/O**: aiohttp + asyncio aszinkron LLM hívásokhoz
-- **ThreadPoolExecutor**: Párhuzamos batch feldolgozás
-- **Real-time progress tracking**: Socket.IO WebSocket-en keresztül
-- **localStorage persistence**: Task folytatás oldal frissítés után
-
-#### 📊 Monitoring
-- Task Manager Redis-based állapotkövetés
-- Worker és App komponens külön loggolás
-- Cache HIT/MISS események real-time nyomon követése
-- Feldolgozás végén részletes cache report
-
-### Kód Stílus
-- PEP 8 Python stíluskövetés
-- Type hints használata
-- Docstring dokumentáció
-- Error handling minden külső híváshoz
-
-### Adatvalidáció és Séma Kezelés
-- **Pydantic modellek** LLM kimenetek strukturált validációjához
-- **Pandera sémák** Parquet fájlok beolvasási validációhoz
-- **Szigorú JSON parsing** LLM hallucináció elleni védekezéshez
-- **Input sanitization** SQL injection és XSS támadások ellen
-- **Data quality checks** automatikus adattisztasági riportokkal
-
-### Testing
-```bash
-# Unit tesztek futtatása
-python -m pytest tests/
-
-# Integration tesztek
-docker-compose -f docker-compose.test.yml up
+**1. Socket.IO 404 hibák**
+```
+Megoldás: Töröld a böngésző cache-t (Ctrl+Shift+Delete)
+vagy használj Inkognitó módot.
 ```
 
-### Debugging
-- Flask development mód: `FLASK_DEBUG=1`
-- O🎯 Befejezett & Jövőbeli Fejlesztések
-
-### ✅ Befejezett Optimalizációk (2026. január)
-- [x] **RQ háttérfeladatok** 2 worker-rel párhuzamos feldolgozásra
-- [x] **Real-time progress tracking** WebSocket + ETA számítás
-- [x] **Pydantic validáció** robusztus LLM output kezeléshez
-- [x] **ML Worker Filter** TF-IDF előszűréssel
-- [x] **Redis cache** SHA256 hash alapú LLM cache
-- [x] **WebSocket real-time frissítések** Socket.IO
-- [x] **Batch LLM processing** 3 cikk/kérés
-- [x] **Connection pooling** persistent HTTP sessions
-- [x] **Memory-mapped Parquet** PyArrow streaming
-- [x] **Inkrementális feldolgozás** hash-based change detection
-
-### Hosszútávú Továbbfejlesztési Lehetőségek
-- [ ] Apache Airflow integrálás ütemezett futtatásokhoz
-- [ ] Elasticsearch teljes szöveges kereséshez
-- [ ] A/B tesztelés különböző LLM modellekhez (Llama-3.3, GPT-4, etc.)
-- [ ] Kubernetes telepítés production környezethez
-- [ ] Automated testing pipeline (pytest + CI/CD)
-- [ ] Monitoring és alerting (Prometheus/Grafana)
-- [ ] Multi-tenant support különböző városokhoz
-- [ ] Advanced ML features (sentiment analysis, price anomaly detection
-   - GPU használat engedélyezése
-   - Kisebb modell választás
-   - Kétlépcsős szűrés implementálása
-
-5. **Gateway Timeout adatfeldolgozás közben**
-   - Háttérfeladat-kezelő implementálása (RQ/Celery)
-   - Progress tracking és státusz végpontok
-   - Aszinkron feldolgozás WebSocket-ekkel
-
-6. **LLM JSON parsing hibák**
-   - Pydantic validáció implementálása
-   - Retry mechanizmus hibás JSON esetén
-   - Fallback szabályalapú kategorizálás
-
-### Log Fájlok
-- `llm_decisions_log.csv`: LLM döntések
-## � Troubleshooting
-
-### Ollama Slow Startup
+**2. GCP "credentials not found" hiba**
 ```bash
-# GPU ellenőrzés
-docker exec thesis_project-ollama-1 nvidia-smi
+# Ellenőrizd a fájl létezését
+ls -la gcp-credentials.json
 
-# Model letöltés kézzel
-docker exec thesis_project-ollama-1 ollama pull llama3.2:3b
+# Ellenőrizd a Docker mount-ot
+docker exec thesis_project-app-1 ls -la /workspace/gcp-credentials.json
+
+# Környezeti változó ellenőrzése
+docker exec thesis_project-app-1 printenv GOOGLE_APPLICATION_CREDENTIALS
 ```
 
-### Redis Connection Error
+**3. Ollama modellek nem töltődnek be**
 ```bash
-# Redis log ellenőrzés
-docker logs thesis_project-redis-1
+# Modellek manuális letöltése
+docker exec -it thesis_project-ollama-1 ollama pull llama3.2:3b
 
-# Redis újraindítás
-docker-compose restart redis
+# Elérhető modellek listázása
+docker exec -it thesis_project-ollama-1 ollama list
 ```
 
-### Worker Not Processing
+**4. Airflow DAG nem jelenik meg**
 ```bash
-# Worker logok
-docker logs thesis_project-llm-data-worker-1 -f
-docker logs thesis_project-llm-data-worker-2 -f
+# Scheduler újraindítása
+docker-compose restart airflow-scheduler
 
-# Queue ellenőrzés
-docker exec thesis_project-redis-1 redis-cli LLEN rq:queue:data_processing
-
-# Worker újraindítás
-docker-compose restart llm-data-worker
+# DAG validálás
+docker exec -it thesis_project-airflow-scheduler-1 airflow dags list
 ```
 
-### Cache Issues
-- Admin UI: http://localhost:5001/admin/cache
-- "Cache törlése" gomb kattintás
-- Vagy manuálisan: `docker exec thesis_project-redis-1 redis-cli FLUSHDB`
+---
 
-## 📊 Projekt Statisztikák
+## 👨‍💻 Fejlesztő Információk
 
-- **Kódsorok**: ~3,000 Python LoC (core logic)
-- **Feldolgozott adatok**: 12,750 hirdetés
-  - Releváns: 11,310 (88.7%)
-  - Irreleváns: 1,440 (11.3%)
-- **LLM pontosság**: 99% (10k+ validációs adat)
-- **Optimalizációk**: 8/8 (100% kész)
-- **Teljesítmény**: 85% gyorsítás az eredeti verzióhoz képest
-- **Services**: 5 Docker container
-- **Production status**: ✅ Ready
+**Projekt típus**: Szakdolgozat  
+**Témavezető**: [Név]  
+**Fejlesztő**: [Név]  
+**Készült**: 2025-2026  
+**Egyetem**: [Egyetem neve]
 
-## 🎯 Jövőbeli Fejlesztési Lehetőségek
+### Technológiai Választások Indoklása
 
-### Rövid Távú
-- [ ] Automated testing suite (pytest + CI/CD)
-- [ ] Prometheus/Grafana monitoring
-- [ ] Kubernetes deployment manifests
-- [ ] A/B testing framework különböző LLM promptokhoz
+- **Ollama**: Lokális LLM futtatás, költséghatékony (vs. OpenAI API)
+- **Airflow**: Komplex workflow management, újraindítható taskek
+- **Redis**: In-memory cache, gyors LLM válasz visszakeresés
+- **DuckDB**: Parquet fájlok közvetlen SQL lekérdezése (in-process OLAP)
+- **Flask**: Egyszerű, Python-native web framework
 
-### Hosszú Távú
-- [ ] Apache Airflow DAG-ek napi/heti ütemezett futtatáshoz
-- [ ] Elasticsearch full-text search
-- [ ] Multi-city support (Debrecen, Szeged, stb.)
-- [ ] Sentiment analysis lakás leírásokból
-- [ ] Price anomaly detection (fraud alerts)
-- [ ] Mobile app (React Native)
+---
+
+## 📄 License
+
+Ez a projekt oktatási célokra készült szakdolgozat keretében.
+
+---
 
 ## 🙏 Köszönetnyilvánítás
 
-Köszönet a következő open-source projekteknek:
-- [Ollama](https://ollama.ai/) - Lokális LLM futtatás
-- [Flask](https://flask.palletsprojects.com/) - Web framework
-- [Redis](https://redis.io/) - Cache és message broker
-- [PyArrow](https://arrow.apache.org/docs/python/) - Memory-mapped Parquet
-- [Scikit-learn](https://scikit-learn.org/) - ML worker filter
-- [XGBoost](https://xgboost.readthedocs.io/) - Árpredikció
-- [RQ](https://python-rq.org/) - Background job queue
-- [Socket.IO](https://socket.io/) - Real-time WebSocket
-
-## 📄 Licenc
-
-Ez a projekt oktatási célú szakdolgozat részeként készült. Szabadon használható és módosítható.
+- **OpenStreetMap**: Budapest kerülethatárok adatai
+- **Ollama projekt**: Nyílt forráskódú LLM inference
+- **Apache Airflow közösség**: Workflow orchestration
 
 ---
 
-**Utolsó frissítés**: 2026. január 30.  
-**Verzió**: 2.1.0 (Production-Ready)  
-**Szerző**: Szakdolgozat projekt  
-**Python**: 3.10+  
-**Docker**: Compose 2.0+
-## Teljesítmény Optimalizálás
-
-### LLM Optimalizálás
-- **GPU használat maximalizálása** CUDA támogatással
-- **Kétlépcsős szűrés**: Szabályalapú előszűrés a "szürke zónás" hirdetések LLM-hez küldése előtt
-- **Batch processing**: Hirdetések kötegelése nagyobb throughput-ért (context window limitek figyelembevételével)
-- **Model caching** Ollama-ban gyakran használt promptokhoz
-- **Párhuzamos feldolgozás** ThreadPoolExecutor-ral optimális thread számmal
-- **Intelligens retry logika** átmeneti LLM hibák kezelésére
-
-### Adatbázis Optimalizálás
-- Parquet particionálás dátum alapján
-- DuckDB indexek használata
-- Memóriában tartott gyakori lekérdezések
-
-## Jövőbeli Fejlesztések
-
-### Kritikus Prioritás
-- [ ] **Aszinkron feldolgozás** RQ/Celery háttérfeladatokkal
-- [ ] **Progress tracking API** real-time státusz követéshez
-- [ ] **Pydantic/Pandera validáció** robusztus adatkezeléshez
-- [ ] **Kétlépcsős LLM szűrés** teljesítményoptimalizáláshoz
-
-### Közepes Prioritás
-- [ ] Apache Airflow integrálás ütemezett futtatásokhoz
-- [ ] Redis cache réteg gyakori lekérdezésekhez
-- [ ] WebSocket alapú real-time frissítések
-- [ ] Batch LLM processing nagyobb throughput-ért
-
-### Hosszútávú
-- [ ] Elasticsearch teljes szöveges kereséshez
-- [ ] A/B tesztelés különböző LLM modellekhez
-- [ ] Kubernetes telepítés production környezethez
-- [ ] Automated testing pipeline
-- [ ] Monitoring és alerting (Prometheus/Grafana)
-
-## Licenc és Közreműködés
-
-Ez a projekt szabadon használható és módosítható. Közreműködést szívesen fogadunk!
-
-### Közreműködési Útmutató
-1. Fork-old a projektet
-2. Készíts egy feature branch-et
-3. Commitold a változásaidat
-4. Nyiss pull request-et
-
-## Kapcsolat
-
-Ha kérdésed vagy problémád van, nyiss egy issue-t a GitHub repozitóriumban.
-
----
-
-**Utolsó frissítés**: 2026. január 13.
-**Verzió**: 1.0.0
+**Utolsó frissítés**: 2026. február 4.

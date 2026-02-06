@@ -1,0 +1,436 @@
+{% extends "base.html" %}
+{% block title %}Vezérlőpult{% endblock %}
+{% block content %}
+<div class="bg-light p-5 rounded mt-3">
+    <h1>Vezérlőpult</h1>
+    <p class="lead">Itt indíthatod el a hirdetések teljes körű elemzését és szűrését. A folyamat aszinkron módon fut a háttérben, és real-time követhető.</p>
+    
+    <!-- Progress tracking terület -->
+    <div id="progress-container" class="mt-4" style="display: none;">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0">Feldolgozási állapot</h4>
+            <button id="reset-task" class="btn btn-danger btn-sm">
+                <i class="fas fa-stop-circle"></i> Feldolgozás Leállítása & Újraindítás
+            </button>
+        </div>
+        <div class="progress mb-3">
+            <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                 role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+        </div>
+        <div id="status-message" class="alert alert-info">Inicializálás...</div>
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Feldolgozva</h5>
+                        <h2 id="processed-count">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Releváns</h5>
+                        <h2 id="relevant-count">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Irreleváns</h5>
+                        <h2 id="irrelevant-count">0</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">Összesen</h5>
+                        <h2 id="total-count">-</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ETA és teljesítmény metrikák -->
+        <div class="row mt-3">
+            <div class="col-md-4">
+                <div class="card bg-secondary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">⏱️ Eltelt idő</h5>
+                        <h3 id="elapsed-time">-</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-dark text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">🎯 Hátralévő idő (ETA)</h5>
+                        <h3 id="eta-time">Számítás...</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <h5 class="card-title">⚡ Feldolgozási sebesség</h5>
+                        <h3 id="processing-speed">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Indító gomb - CSAK ADMIN LÁTJA -->
+    {% if session.get('logged_in') %}
+    <div id="start-container">
+        <button id="start-pipeline" class="btn btn-lg btn-primary me-2">
+            <i class="fas fa-play"></i> LLM Adatfeldolgozás Indítása (Teljes)
+        </button>
+        <button id="start-pipeline-test" class="btn btn-lg btn-warning">
+            <i class="fas fa-flask"></i> Teszt Futtatás (100 worker + 50 LLM)
+        </button>
+        <p class="text-muted mt-2">
+            <small><strong>Teljes:</strong> Mind a 12653 cikk (~6-8 óra) | 
+            <strong>Teszt:</strong> Első 100 worker + 50 LLM (~5 perc)</small>
+        </p>
+    </div>
+    {% else %}
+    <div class="alert alert-info mt-4">
+        <h5>🔒 Admin jogosultság szükséges</h5>
+        <p>Az adatfeldolgozás indításához jelentkezz be admin-ként.</p>
+        <a href="{{ url_for('login') }}" class="btn btn-primary">Bejelentkezés</a>
+    </div>
+    {% endif %}
+    
+    <!-- Befejezett feladat információ -->
+    <div id="completed-container" class="mt-4" style="display: none;">
+        <div class="alert alert-success">
+            <h4><i class="fas fa-check-circle"></i> Feldolgozás befejezve!</h4>
+            <p id="completion-message">Az adatfeldolgozás sikeresen befejeződött.</p>
+            <a href="{{ url_for('stats') }}" class="btn btn-success">Statisztikák megtekintése</a>
+            <a href="{{ url_for('data_table') }}" class="btn btn-info">Adatok böngészése</a>
+        </div>
+    </div>
+</div>
+
+<!-- WebSocket kapcsolat és progress tracking -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script>
+let socket = null;
+let currentTaskId = null;
+
+// Oldal betöltésekor ellenőrizzük, hogy van-e folyamatban lévő task
+window.addEventListener('DOMContentLoaded', function() {
+    const savedTaskId = localStorage.getItem('currentTaskId');
+    if (savedTaskId) {
+        currentTaskId = savedTaskId;
+        // Ellenőrizzük, hogy a task még fut-e
+        fetch(`/task-status/${currentTaskId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.status.status !== 'completed' && data.status.status !== 'failed') {
+                    // Task még fut, folytassuk a követést
+                    showProgressContainer();
+                    hideStartContainer();
+                    updateProgressDisplay(data.status);
+                    connectWebSocket();
+                } else {
+                    // Task befejeződött vagy nem létezik, tisztítsuk a localStorage-t
+                    localStorage.removeItem('currentTaskId');
+                    currentTaskId = null;
+                    if (data.success && data.status.status === 'completed') {
+                        showProgressContainer();
+                        hideStartContainer();
+                        showCompletedContainer(data.status.message);
+                        updateProgressDisplay(data.status);
+                    }
+                }
+            })
+            .catch(error => {
+                console.log('Nincs aktív task');
+                localStorage.removeItem('currentTaskId');
+                currentTaskId = null;
+            });
+    }
+});
+
+document.getElementById('start-pipeline').addEventListener('click', function() {
+    startDataProcessing(false);  // Teljes feldolgozás
+});
+
+// Teszt gomb eseménykezelő
+const testButton = document.getElementById('start-pipeline-test');
+if (testButton) {
+    testButton.addEventListener('click', function() {
+        startDataProcessing(true);  // Teszt feldolgozás
+    });
+}
+
+// Reset task button handler
+document.getElementById('reset-task').addEventListener('click', function() {
+    if (confirm('Biztosan le szeretnéd állítani a feldolgozást és újra kezdeni?\n\nEz törli a jelenlegi task állapotot és lehetővé teszi új feldolgozás indítását.')) {
+        resetTask();
+    }
+});
+
+function resetTask() {
+    // WebSocket lecsatlakoztatása
+    if (socket) {
+        socket.disconnect();
+        socket = null;
+    }
+    
+    // Polling leállítása
+    if (window.progressPollingInterval) {
+        clearInterval(window.progressPollingInterval);
+        window.progressPollingInterval = null;
+    }
+    
+    // Task ID törlése
+    localStorage.removeItem('currentTaskId');
+    currentTaskId = null;
+    
+    // UI reset
+    hideProgressContainer();
+    hideCompletedContainer();
+    showStartContainer();
+    resetStartButton();
+    
+    // Success message
+    showAlert('A feldolgozás leállítva. Most újra elindíthatod az adatfeldolgozást.', 'info');
+}
+
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.querySelector('.bg-light').insertBefore(alertDiv, document.querySelector('.bg-light').firstChild.nextSibling);
+    
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+function startDataProcessing(isTest = false) {
+    // Gomb letiltása
+    const startBtn = isTest ? document.getElementById('start-pipeline-test') : document.getElementById('start-pipeline');
+    const allButtons = document.querySelectorAll('#start-container button');
+    
+    allButtons.forEach(btn => {
+        btn.disabled = true;
+    });
+    
+    startBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Indítás...';
+    
+    // API hívás az adatfeldolgozás indítására
+    const endpoint = isTest ? '/run-pipeline-test' : '/run-pipeline';
+    fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            currentTaskId = data.task_id;
+            // Task ID mentése localStorage-ba
+            localStorage.setItem('currentTaskId', currentTaskId);
+            showProgressContainer();
+            connectWebSocket();
+            hideStartContainer();
+        } else {
+            alert('Hiba: ' + data.message);
+            resetStartButton();
+        }
+    })
+    .catch(error => {
+        console.error('Hiba:', error);
+        alert('Hiba történt a feldolgozás indításakor');
+        resetStartButton();
+    });
+}
+
+function connectWebSocket() {
+    socket = io();
+    
+    socket.on('connect', function() {
+        console.log('WebSocket kapcsolat létrejött');
+        if (currentTaskId) {
+            socket.emit('subscribe_to_task', {'task_id': currentTaskId});
+            // HTTP polling backup indítása is
+            startProgressPolling();
+        }
+    });
+    
+    socket.on('status_update', function(data) {
+        updateProgressDisplay(data);
+    });
+    
+    socket.on('disconnect', function() {
+        console.log('WebSocket kapcsolat megszakadt');
+        // WebSocket megszakadás esetén HTTP polling-ra váltás
+        startProgressPolling();
+    });
+}
+
+// HTTP polling backup mechanism
+function startProgressPolling() {
+    if (window.progressPollingInterval) {
+        clearInterval(window.progressPollingInterval);
+    }
+    
+    window.progressPollingInterval = setInterval(() => {
+        if (currentTaskId) {
+            fetch(`/task-status/${currentTaskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateProgressDisplay(data.status);
+                        // Ha befejeződött, állítsuk le a polling-ot
+                        if (data.status.status === 'completed' || data.status.status === 'failed') {
+                            clearInterval(window.progressPollingInterval);
+                            window.progressPollingInterval = null;
+                        }
+                    }
+                })
+                .catch(error => console.log('Polling hiba:', error));
+        }
+    }, 2000); // 2 másodpercenként
+}
+
+function updateProgressDisplay(status) {
+    // Progress bar frissítése
+    const progressBar = document.getElementById('progress-bar');
+    progressBar.style.width = status.progress + '%';
+    progressBar.textContent = Math.round(status.progress) + '%';
+    progressBar.setAttribute('aria-valuenow', status.progress);
+    
+    // Státusz üzenet frissítése
+    document.getElementById('status-message').innerHTML = 
+        '<i class="fas fa-info-circle"></i> ' + status.message;
+    
+    // Számlálók frissítése
+    document.getElementById('processed-count').textContent = status.processed_items || 0;
+    document.getElementById('relevant-count').textContent = status.relevant_found || 0;
+    document.getElementById('irrelevant-count').textContent = status.irrelevant_found || 0;
+    document.getElementById('total-count').textContent = status.total_items || '-';
+    
+    // ETA és teljesítmény metrikák frissítése
+    if (status.elapsed_seconds !== null && status.elapsed_seconds !== undefined) {
+        document.getElementById('elapsed-time').textContent = formatTime(status.elapsed_seconds);
+    }
+    
+    if (status.eta_seconds !== null && status.eta_seconds !== undefined && status.eta_seconds > 0) {
+        document.getElementById('eta-time').textContent = formatTime(status.eta_seconds);
+    } else if (status.progress > 1.0) {
+        document.getElementById('eta-time').textContent = 'Számítás...';
+    }
+    
+    if (status.items_per_second !== null && status.items_per_second !== undefined) {
+        const speed = status.items_per_second;
+        if (speed < 1) {
+            document.getElementById('processing-speed').textContent = 
+                (speed * 60).toFixed(1) + ' elem/perc';
+        } else {
+            document.getElementById('processing-speed').textContent = 
+                speed.toFixed(2) + ' elem/sec';
+        }
+    }
+    
+    // Ha befejezés
+    if (status.status === 'completed') {
+        showCompletedContainer(status.message);
+        progressBar.classList.remove('progress-bar-animated');
+        document.getElementById('eta-time').textContent = '✅ Kész!';
+    } else if (status.status === 'failed') {
+        showErrorState(status.message);
+    }
+}
+
+// Időformázó helper függvény
+function formatTime(seconds) {
+    if (seconds < 60) {
+        return Math.round(seconds) + 's';
+    } else if (seconds < 3600) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.round(seconds % 60);
+        return minutes + 'm ' + secs + 's';
+    } else {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return hours + 'h ' + minutes + 'm';
+    }
+}
+
+function showProgressContainer() {
+    document.getElementById('progress-container').style.display = 'block';
+}
+
+function hideStartContainer() {
+    document.getElementById('start-container').style.display = 'none';
+}
+
+function showCompletedContainer(message) {
+    document.getElementById('completed-container').style.display = 'block';
+    document.getElementById('completion-message').textContent = message;
+    
+    // Task ID törlése localStorage-ból
+    localStorage.removeItem('currentTaskId');
+    currentTaskId = null;
+    
+    // Polling leállítása
+    if (window.progressPollingInterval) {
+        clearInterval(window.progressPollingInterval);
+        window.progressPollingInterval = null;
+    }
+    
+    if (socket) {
+        socket.disconnect();
+    }
+}
+
+function hideProgressContainer() {
+    document.getElementById('progress-container').style.display = 'none';
+}
+
+function hideCompletedContainer() {
+    document.getElementById('completed-container').style.display = 'none';
+}
+
+function showStartContainer() {
+    document.getElementById('start-container').style.display = 'block';
+}
+
+function showErrorState(message) {
+    const statusMessage = document.getElementById('status-message');
+    statusMessage.className = 'alert alert-danger';
+    statusMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Hiba: ' + message;
+    
+    // Újraindítás gomb megjelenítése
+    resetStartButton();
+    document.getElementById('start-container').style.display = 'block';
+}
+
+function resetStartButton() {
+    const startBtn = document.getElementById('start-pipeline');
+    const testBtn = document.getElementById('start-pipeline-test');
+    
+    if (startBtn) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="fas fa-play"></i> LLM Adatfeldolgozás Indítása (Teljes)';
+    }
+    
+    if (testBtn) {
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<i class="fas fa-flask"></i> Teszt Futtatás (100 worker + 50 LLM)';
+    }
+}
+</script>
+{% endblock %}

@@ -4,6 +4,41 @@
 <h1>🛠️ Adminisztrációs Vezérlőpult</h1>
 <p class="text-muted">Erőforrás-igényes műveletek kezelése</p>
 
+<!-- GCP Adatfrissítés szekció (ÚJ) -->
+<div class="card mt-4">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0">☁️ GCP Adatfrissítés</h5>
+    </div>
+    <div class="card-body">
+        <p>Ellenőrizd és töltsd le a legfrissebb core_data.parquet fájlt a Google Cloud Storage-ból.</p>
+        <p><strong>Bucket:</strong> ingatlan-core-eu/core_data.parquet</p>
+        
+        <div class="btn-group" role="group">
+            <button onclick="checkGCPUpdate()" class="btn btn-outline-success">
+                🔍 Frissítés Ellenőrzése
+            </button>
+            <button onclick="downloadFromGCP()" class="btn btn-success" id="downloadBtn" disabled>
+                ⬇️ Letöltés GCP-ből
+            </button>
+        </div>
+        
+        <div id="gcpStatus" class="mt-3 d-none">
+            <div class="alert" id="gcpAlert"></div>
+            <table class="table table-sm" id="gcpTable">
+                <thead>
+                    <tr>
+                        <th>Verzió</th>
+                        <th>Frissítve</th>
+                        <th>Méret</th>
+                        <th>Állapot</th>
+                    </tr>
+                </thead>
+                <tbody id="gcpTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Adatfeldolgozás szekció -->
 <div class="card mt-4">
     <div class="card-header bg-warning text-dark">
@@ -41,6 +76,70 @@
         <button onclick="trainModel()" class="btn btn-danger">
             🎓 Modell Tanítása
         </button>
+    </div>
+</div>
+
+<!-- Modulok Tesztelése (ÚJ) -->
+<div class="card mt-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">🔧 Modulok Tesztelése</h5>
+    </div>
+    <div class="card-body">
+        <p>Rendszerkomponensek elérhetőségének és működésének ellenőrzése.</p>
+        
+        <button onclick="testAllModules()" class="btn btn-primary btn-lg mb-3">
+            🚀 Összes Modul Tesztelése
+        </button>
+        
+        <div class="row mt-3">
+            <div class="col-md-4 mb-2">
+                <button onclick="testModule('redis')" class="btn btn-outline-primary w-100">
+                    🗄️ Redis
+                </button>
+            </div>
+            <div class="col-md-4 mb-2">
+                <button onclick="testModule('ollama')" class="btn btn-outline-primary w-100">
+                    🤖 Ollama (LLM)
+                </button>
+            </div>
+            <div class="col-md-4 mb-2">
+                <button onclick="testModule('parquet')" class="btn btn-outline-primary w-100">
+                    📊 Parquet Fájl
+                </button>
+            </div>
+            <div class="col-md-4 mb-2">
+                <button onclick="testModule('gcp')" class="btn btn-outline-primary w-100">
+                    ☁️ GCP Storage
+                </button>
+            </div>
+            <div class="col-md-4 mb-2">
+                <button onclick="testModule('airflow')" class="btn btn-outline-primary w-100">
+                    🌪️ Airflow API
+                </button>
+            </div>
+            <div class="col-md-4 mb-2">
+                <button onclick="testModule('model')" class="btn btn-outline-primary w-100">
+                    🎯 ML Modell
+                </button>
+            </div>
+        </div>
+        
+        <div id="moduleTestResults" class="mt-4 d-none">
+            <h6>Teszt Eredmények:</h6>
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Modul</th>
+                            <th>Állapot</th>
+                            <th>Válaszidő</th>
+                            <th>Részletek</th>
+                        </tr>
+                    </thead>
+                    <tbody id="moduleTestTableBody"></tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -89,10 +188,7 @@
     </div>
 </div>
 
-<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 <script>
-    const socket = io();
-
     function startPipeline() {
         if (!confirm('Biztosan elindítod a teljes adatfeldolgozást? Ez 6-8 órát vehet igénybe!')) {
             return;
@@ -105,10 +201,7 @@
                     document.getElementById('pipelineStatus').classList.remove('d-none');
                     document.getElementById('pipelineMessage').textContent = 'Feldolgozás folyamatban...';
                     
-                    // WebSocket csatlakozás a progress tracking-hez
-                    socket.emit('join', { room: data.task_id });
-                    
-                    alert('✅ Adatfeldolgozás elindult! Task ID: ' + data.task_id);
+                    alert('✅ Adatfeldolgozás elindult! Task ID: ' + data.task_id + '\n\nA folyamat a háttérben fut. Az eredményeket később ellenőrizheted.');
                 } else {
                     alert('❌ Hiba: ' + data.error);
                 }
@@ -161,18 +254,174 @@
             .catch(err => alert('❌ Hálózati hiba: ' + err));
     }
 
-    // WebSocket progress tracking
-    socket.on('progress', function(data) {
-        const percent = data.percent || 0;
-        document.getElementById('pipelineProgress').style.width = percent + '%';
-        document.getElementById('pipelineProgress').textContent = percent.toFixed(1) + '%';
-        document.getElementById('pipelineMessage').textContent = data.message || '';
-    });
+    // ========== GCP Funkciók ==========
+    function checkGCPUpdate() {
+        const statusDiv = document.getElementById('gcpStatus');
+        const alertDiv = document.getElementById('gcpAlert');
+        const tableBody = document.getElementById('gcpTableBody');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        statusDiv.classList.remove('d-none');
+        alertDiv.className = 'alert alert-info';
+        alertDiv.textContent = '🔍 Ellenőrzés folyamatban...';
+        
+        fetch('/admin/gcp/check-update')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    const isNewer = data.is_newer;
+                    alertDiv.className = isNewer ? 'alert alert-warning' : 'alert alert-success';
+                    alertDiv.innerHTML = `<strong>${data.recommendation}</strong>`;
+                    
+                    // Táblázat feltöltése
+                    tableBody.innerHTML = `
+                        <tr>
+                            <td><strong>GCP Cloud</strong></td>
+                            <td>${new Date(data.gcp.updated).toLocaleString('hu-HU')}</td>
+                            <td>${data.gcp.size_mb} MB</td>
+                            <td><span class="badge bg-success">Elérhető</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Helyi példány</strong></td>
+                            <td>${data.local.updated ? new Date(data.local.updated).toLocaleString('hu-HU') : 'N/A'}</td>
+                            <td>${data.local.size_mb ? data.local.size_mb + ' MB' : 'N/A'}</td>
+                            <td><span class="badge bg-${data.local.exists ? 'info' : 'secondary'}">${data.local.exists ? 'Létezik' : 'Nincs'}</span></td>
+                        </tr>
+                    `;
+                    
+                    // Letöltés gomb engedélyezése, ha újabb verzió van
+                    downloadBtn.disabled = !isNewer;
+                } else {
+                    alertDiv.className = 'alert alert-danger';
+                    alertDiv.textContent = '❌ Hiba: ' + data.error;
+                }
+            })
+            .catch(err => {
+                alertDiv.className = 'alert alert-danger';
+                alertDiv.textContent = '❌ Hálózati hiba: ' + err;
+            });
+    }
 
-    socket.on('completed', function(data) {
-        document.getElementById('pipelineMessage').textContent = '✅ Feldolgozás befejezve!';
-        document.getElementById('pipelineProgress').classList.remove('progress-bar-animated');
-        alert('✅ Adatfeldolgozás kész!\nRelevans: ' + data.relevant + ', Irrelevans: ' + data.irrelevant);
-    });
+    function downloadFromGCP() {
+        if (!confirm('Letöltöd a core_data.parquet fájlt a GCP-ből? Ez felülírja a meglévő helyi fájlt.')) return;
+        
+        const alertDiv = document.getElementById('gcpAlert');
+        const downloadBtn = document.getElementById('downloadBtn');
+        
+        alertDiv.className = 'alert alert-info';
+        alertDiv.textContent = '⬇️ Letöltés folyamatban... Kérlek várj, ez eltarthat néhány percig.';
+        downloadBtn.disabled = true;
+        
+        fetch('/admin/gcp/download', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alertDiv.className = 'alert alert-success';
+                    alertDiv.innerHTML = `
+                        <strong>✅ Sikeres letöltés!</strong><br>
+                        📊 ${data.row_count.toLocaleString()} sor, ${data.col_count} oszlop<br>
+                        💡 ${data.recommendation}
+                    `;
+                    // Újraellenőrzés
+                    setTimeout(() => checkGCPUpdate(), 1000);
+                } else {
+                    alertDiv.className = 'alert alert-danger';
+                    alertDiv.textContent = '❌ Hiba: ' + data.error;
+                    downloadBtn.disabled = false;
+                }
+            })
+            .catch(err => {
+                alertDiv.className = 'alert alert-danger';
+                alertDiv.textContent = '❌ Hálózati hiba: ' + err;
+                downloadBtn.disabled = false;
+            });
+    }
+
+    // ========== Modul Tesztelés Funkciók ==========
+    function testModule(moduleName) {
+        const resultsDiv = document.getElementById('moduleTestResults');
+        const tableBody = document.getElementById('moduleTestTableBody');
+        
+        resultsDiv.classList.remove('d-none');
+        
+        const startTime = performance.now();
+        fetch(`/admin/test-module/${moduleName}`)
+            .then(res => res.json())
+            .then(data => {
+                const responseTime = (performance.now() - startTime).toFixed(0);
+                addTestResult(moduleName, data, responseTime);
+            })
+            .catch(err => {
+                const responseTime = (performance.now() - startTime).toFixed(0);
+                addTestResult(moduleName, { success: false, message: err.toString() }, responseTime);
+            });
+    }
+
+    function testAllModules() {
+        const modules = ['redis', 'ollama', 'parquet', 'gcp', 'airflow', 'model'];
+        const resultsDiv = document.getElementById('moduleTestResults');
+        const tableBody = document.getElementById('moduleTestTableBody');
+        
+        resultsDiv.classList.remove('d-none');
+        tableBody.innerHTML = '<tr><td colspan="4" class="text-center">🔍 Tesztelés folyamatban...</td></tr>';
+        
+        // Összes modul párhuzamos tesztelése
+        Promise.all(modules.map(moduleName => {
+            const startTime = performance.now();
+            return fetch(`/admin/test-module/${moduleName}`)
+                .then(res => res.json())
+                .then(data => ({
+                    module: moduleName,
+                    data: data,
+                    responseTime: (performance.now() - startTime).toFixed(0)
+                }))
+                .catch(err => ({
+                    module: moduleName,
+                    data: { success: false, message: err.toString() },
+                    responseTime: (performance.now() - startTime).toFixed(0)
+                }));
+        })).then(results => {
+            tableBody.innerHTML = '';
+            results.forEach(result => {
+                addTestResult(result.module, result.data, result.responseTime);
+            });
+        });
+    }
+
+    function addTestResult(moduleName, data, responseTime) {
+        const tableBody = document.getElementById('moduleTestTableBody');
+        const moduleIcons = {
+            redis: '🗄️',
+            ollama: '🤖',
+            parquet: '📊',
+            gcp: '☁️',
+            airflow: '🌪️',
+            model: '🎯'
+        };
+        
+        const statusBadge = data.success 
+            ? '<span class="badge bg-success">✅ OK</span>' 
+            : '<span class="badge bg-danger">❌ HIBA</span>';
+        
+        const row = `
+            <tr>
+                <td>${moduleIcons[moduleName] || '📦'} <strong>${moduleName.toUpperCase()}</strong></td>
+                <td>${statusBadge}</td>
+                <td>${responseTime} ms</td>
+                <td class="small">${data.message || data.error || data.details || 'N/A'}</td>
+            </tr>
+        `;
+        
+        // Ha már van sor ezzel a modullal, cseréljük ki
+        const existingRow = Array.from(tableBody.rows).find(row => 
+            row.cells[0].textContent.includes(moduleName.toUpperCase())
+        );
+        
+        if (existingRow) {
+            existingRow.outerHTML = row;
+        } else {
+            tableBody.insertAdjacentHTML('beforeend', row);
+        }
+    }
 </script>
 {% endblock %}

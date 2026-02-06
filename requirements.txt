@@ -10,14 +10,28 @@ scikit-learn
 xgboost
 openpyxl  # Excel fájlok írásához/olvasásához
 python-dotenv  # Környezeti változók kezelése
-# Aszinkron feldolgozás és háttérfeladatok
-rq
+
+# Airflow orchestration (RQ helyettesítése)
+apache-airflow==2.8.1
+apache-airflow-providers-postgres==5.10.0
+
+# Redis (cache + Airflow Celery backend)
 redis
-flask-socketio
+celery
+
+# Aszinkron HTTP
 aiohttp
-asyncio
+
 # Adatvalidáció
 pydantic
 pandera
-# Progress tracking
-uuid
+
+# Google Cloud Storage
+google-cloud-storage
+
+# Testing
+pytest>=7.4.0
+pytest-mock>=3.11.0
+pytest-cov>=4.1.0
+pytest-asyncio
+fakeredis

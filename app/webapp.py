@@ -6,10 +6,16 @@ import folium
 import subprocess
 import uuid
 from functools import wraps
+from datetime import datetime
 
 from flask import Flask, render_template, request, flash, redirect, url_for, jsonify, session
-from flask_socketio import SocketIO, emit, join_room, leave_room
-from task_manager import TaskManager, enqueue_data_processing_task, get_queue_status
+try:
+    from google.cloud import storage
+    from google.api_core import exceptions as gcp_exceptions
+    GCP_AVAILABLE = True
+except ImportError:
+    GCP_AVAILABLE = False
+from airflow_api import get_airflow_client
 from models import TaskStatus
 from llm_cache import get_cache_stats, clear_cache
 from ml_worker_filter import get_ml_filter, train_ml_filter_from_llm_log
@@ -30,14 +36,20 @@ STATIC_DIR = os.path.join(APP_DIR, 'static')
 PARQUET_DIR = os.path.join(WORKSPACE_DIR, 'parquet')
 RELEVANT_FILE = os.path.join(PARQUET_DIR, 'core_layer_filtered.parquet')
 IRRELEVANT_FILE = os.path.join(PARQUET_DIR, 'core_layer_irrelevant.parquet')
+CORE_DATA_FILE = os.path.join(PARQUET_DIR, 'core_data.parquet')  # GCP-ből letöltött nyers fájl
+
+# GCP Storage konfiguráció
+GCP_BUCKET_NAME = 'ingatlan-core-eu'
+GCP_BLOB_NAME = 'core_data.parquet'
+
 MAP_OUTPUT_FILE = os.path.join(STATIC_DIR, 'map_render.html')
 
 app = Flask(__name__, template_folder=APP_DIR)
 app.secret_key = os.getenv('SECRET_KEY', 'supersecretkey')
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', 'admin123')  # Alapértelmezett jelszó fejlesztéshez
 
-# WebSocket támogatás real-time progress tracking-hez
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Airflow API kliens inicializálása
+airflow_client = get_airflow_client()
 
 # --- Admin védelem dekorátor ---
 def admin_required(f):
@@ -49,9 +61,6 @@ def admin_required(f):
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
-
-# Task manager inicializálása SocketIO-val
-task_manager = TaskManager(socketio)
 
 # --- Segédfüggvények ---
 def get_data(file_path):
@@ -67,8 +76,38 @@ def get_data(file_path):
 
 @app.route('/')
 def index():
-    """A főoldal, ahonnan a feldolgozást lehet indítani."""
-    return render_template('index.html')
+    """Főoldal - Dashboard áttekintéssel"""
+    # Alapstatisztikák betöltése
+    stats = {
+        'total_processed': 0,
+        'relevant': 0,
+        'irrelevant': 0,
+        'cache_hit_rate': 0
+    }
+    
+    try:
+        # Releváns hirdetések
+        if os.path.exists(RELEVANT_FILE):
+            df_relevant = pd.read_parquet(RELEVANT_FILE)
+            stats['relevant'] = len(df_relevant)
+        
+        # Irreleváns hirdetések
+        if os.path.exists(IRRELEVANT_FILE):
+            df_irrelevant = pd.read_parquet(IRRELEVANT_FILE)
+            stats['irrelevant'] = len(df_irrelevant)
+        
+        stats['total_processed'] = stats['relevant'] + stats['irrelevant']
+        
+        # Cache statisztikák
+        cache_stats = get_cache_stats()
+        if cache_stats:
+            total_requests = cache_stats.get('hits', 0) + cache_stats.get('misses', 0)
+            if total_requests > 0:
+                stats['cache_hit_rate'] = (cache_stats.get('hits', 0) / total_requests) * 100
+    except Exception as e:
+        print(f"Statisztikák betöltése sikertelen: {e}")
+    
+    return render_template('index.html', stats=stats)
 
 # --- Admin Login / Logout ---
 @app.route('/login', methods=['GET', 'POST'])
@@ -100,24 +139,31 @@ def admin_dashboard():
 @app.route('/run-pipeline', methods=['POST'])
 @admin_required
 def run_pipeline():
-    """Elindítja az adatfeldolgozást aszinkron módon RQ háttérfeladatként."""
+    """Elindítja az Airflow DAG-ot teljes feldolgozásra."""
     try:
-        # Új feladat létrehozása
-        task_id = task_manager.create_task()
+        # Airflow DAG trigger
+        dag_id = 'ingatlan_llm_pipeline'
+        result = airflow_client.trigger_dag(dag_id, conf={'test_mode': False})
         
-        # Feladat beütemezése a háttérben (normál mód: test_mode=False)
-        job_id = enqueue_data_processing_task(task_id, test_mode=False)
+        if 'error' in result:
+            return jsonify({
+                'success': False,
+                'error': result['error'],
+                'message': f'Hiba az Airflow DAG indításkor: {result["error"]}'
+            }), 500
         
-        # Sikeres válasz a task_id-val
+        dag_run_id = result.get('dag_run_id')
+        
+        # Sikeres válasz
         return jsonify({
-            'success': True, 
-            'task_id': task_id,
-            'message': 'Az adatfeldolgozás elindult a háttérben. A haladás követhető a /task-status API-n.'
+            'success': True,
+            'dag_run_id': dag_run_id,
+            'message': 'Az adatfeldolgozás elindult Airflow-ban. Nyisd meg az Airflow UI-t a haladás követéséhez: http://localhost:8080'
         })
         
     except Exception as e:
         return jsonify({
-            'success': False, 
+            'success': False,
             'error': str(e),
             'message': f'Hiba történt a folyamat indításakor: {e}'
         }), 500
@@ -125,69 +171,59 @@ def run_pipeline():
 @app.route('/run-pipeline-test', methods=['POST'])
 @admin_required
 def run_pipeline_test():
-    """Teszt feldolgozás: első 100 cikk worker + első 50 LLM elemzés."""
+    """Teszt feldolgozás: Airflow DAG teszt módban."""
     try:
-        # Új feladat létrehozása
-        task_id = task_manager.create_task()
+        # Airflow DAG trigger teszt módban
+        dag_id = 'ingatlan_llm_pipeline'
+        result = airflow_client.trigger_dag(dag_id, conf={'test_mode': True})
         
-        # Feladat beütemezése TESZT MÓDBAN (test_mode=True)
-        job_id = enqueue_data_processing_task(task_id, test_mode=True)
+        if 'error' in result:
+            return jsonify({
+                'success': False,
+                'error': result['error'],
+                'message': f'Hiba az Airflow DAG indításkor: {result["error"]}'
+            }), 500
         
-        # Sikeres válasz a task_id-val
+        dag_run_id = result.get('dag_run_id')
+        
+        # Sikeres válasz
         return jsonify({
-            'success': True, 
-            'task_id': task_id,
-            'message': f'🧪 TESZT feldolgozás elindult: első 100 cikk worker + első 50 LLM elemzés'
+            'success': True,
+            'dag_run_id': dag_run_id,
+            'message': '🧪 TESZT feldolgozás elindult Airflow-ban (100 cikk). Nyisd meg az Airflow UI-t: http://localhost:8080'
         })
         
     except Exception as e:
         return jsonify({
-            'success': False, 
+            'success': False,
             'error': str(e),
             'message': f'Hiba történt a folyamat indításakor: {e}'
         }), 500
 
-@app.route('/task-status/<task_id>')
-def get_task_status(task_id: str):
-    """Feladat státusz lekérdezése API végpont."""
-    status = task_manager.get_status(task_id)
-    if not status:
-        return jsonify({'success': False, 'error': 'Feladat nem található'}), 404
+@app.route('/airflow-status/<dag_run_id>')
+def get_airflow_status(dag_run_id: str):
+    """Airflow DAG run állapot lekérdezése."""
+    dag_id = 'ingatlan_llm_pipeline'
     
-    return jsonify({
-        'success': True,
-        'status': status.model_dump()
-    })
-
-@app.route('/queue-status')
-def get_queue_status_endpoint():
-    """RQ queue státusz információk."""
     try:
-        queue_info = get_queue_status()
-        return jsonify(queue_info)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-# WebSocket események real-time frissítésekhez
-@socketio.on('subscribe_to_task')
-def handle_task_subscription(data):
-    """Kliens feliratkozása egy feladat státusz frissítéseire."""
-    task_id = data.get('task_id')
-    if task_id:
-        # Kliens hozzáadása a task-specifikus room-hoz
-        join_room(task_id)
-        emit('subscribed', {'task_id': task_id})
+        # DAG run állapot
+        dag_run_status = airflow_client.get_dag_run_status(dag_id, dag_run_id)
         
-        # Aktuális státusz küldése
-        status = task_manager.get_status(task_id)
-        if status:
-            emit('status_update', status.model_dump())
-
-@socketio.on('unsubscribe_from_task')
-def handle_task_unsubscription(data):
-    """Kliens leiratkozása feladat frissítéseiről."""
-    task_id = data.get('task_id')
-    if task_id:
+        if 'error' in dag_run_status:
+            return jsonify({'success': False, 'error': dag_run_status['error']}), 500
+        
+        # Task instance-ok (részletes progress)
+        task_instances = airflow_client.get_task_instances(dag_id, dag_run_id)
+        
+        return jsonify({
+            'success': True,
+            'dag_run_status': dag_run_status,
+            'tasks': task_instances,
+            'airflow_ui_url': 'http://localhost:8080'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
         leave_room(task_id)
         emit('unsubscribed', {'task_id': task_id})
 
@@ -590,6 +626,59 @@ def map_view():
     m.save(MAP_OUTPUT_FILE)
     return render_template('map.html', map_file='map_render.html')
 
+@app.route('/map-interactive')
+def map_interactive():
+    """Interaktív térkép kerület-specifikus hirdetéslistával és keresővel."""
+    return render_template('map_interactive.html')
+
+@app.route('/api/districts-summary')
+def api_districts_summary():
+    """API: Hirdetések száma kerületenként."""
+    df = get_data(RELEVANT_FILE)
+    if df.empty or 'district' not in df.columns:
+        return jsonify({})
+    
+    # Kerületenkénti összesítés
+    district_counts = df.groupby('district').size().to_dict()
+    return jsonify(district_counts)
+
+@app.route('/api/listings-by-district')
+def api_listings_by_district():
+    """API: Adott kerület hirdetéseinek lekérdezése."""
+    district = request.args.get('district')
+    if not district:
+        return jsonify({'error': 'district paraméter hiányzik'}), 400
+    
+    df = get_data(RELEVANT_FILE)
+    if df.empty:
+        return jsonify({'listings': []})
+    
+    # Szűrés kerületre
+    district_df = df[df['district'] == district].copy()
+    
+    # Csak a szükséges oszlopok
+    columns_to_keep = [
+        'article_id', 'title', 'price_huf', 'rooms', 'area_sqm', 
+        'price_per_sqm', 'description', 'link', 'district', 
+        'building_type', 'property_category'
+    ]
+    
+    # Létező oszlopok szűrése
+    existing_cols = [col for col in columns_to_keep if col in district_df.columns]
+    district_df = district_df[existing_cols]
+    
+    # NaN értékek kezelése
+    district_df = district_df.fillna('')
+    
+    # Átalakítás JSON-kompatibilissé
+    listings = district_df.to_dict('records')
+    
+    return jsonify({
+        'district': district,
+        'count': len(listings),
+        'listings': listings
+    })
+
 @app.route('/price-trends')
 def price_trends_view():
     """Ártrend elemzés oldal."""
@@ -887,7 +976,255 @@ def admin_cache_clear():
             'error': str(e)
         }), 500
 
+# ============ GCP Storage Endpoints ============
+
+@app.route('/admin/gcp/check-update', methods=['GET'])
+@admin_required
+def check_gcp_update():
+    """Ellenőrzi, hogy van-e újabb verzió a GCP-ben"""
+    if not GCP_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'Google Cloud Storage könyvtár nincs telepítve'
+        }), 500
+    
+    try:
+        # Google Cloud Storage kliens
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCP_BUCKET_NAME)
+        blob = bucket.blob(GCP_BLOB_NAME)
+        
+        # GCP fájl metaadatai
+        blob.reload()
+        gcp_updated = blob.updated
+        gcp_size = blob.size
+        
+        # Helyi fájl ellenőrzése
+        local_exists = os.path.exists(CORE_DATA_FILE)
+        local_updated = None
+        local_size = None
+        is_newer = False
+        
+        if local_exists:
+            local_stat = os.stat(CORE_DATA_FILE)
+            local_updated = datetime.fromtimestamp(local_stat.st_mtime, tz=gcp_updated.tzinfo)
+            local_size = local_stat.st_size
+            is_newer = gcp_updated > local_updated
+        else:
+            is_newer = True
+        
+        return jsonify({
+            'success': True,
+            'gcp': {
+                'updated': gcp_updated.isoformat(),
+                'size_mb': round(gcp_size / 1024 / 1024, 2),
+                'exists': True
+            },
+            'local': {
+                'updated': local_updated.isoformat() if local_updated else None,
+                'size_mb': round(local_size / 1024 / 1024, 2) if local_size else None,
+                'exists': local_exists
+            },
+            'is_newer': is_newer,
+            'recommendation': 'Új verzió elérhető - letöltés ajánlott!' if is_newer else 'Helyi fájl naprakész'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/admin/gcp/download', methods=['POST'])
+@admin_required
+def download_from_gcp():
+    """Letölti a core_data.parquet fájlt GCP-ből"""
+    if not GCP_AVAILABLE:
+        return jsonify({
+            'success': False,
+            'error': 'Google Cloud Storage könyvtár nincs telepítve'
+        }), 500
+    
+    try:
+        # Google Cloud Storage kliens
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(GCP_BUCKET_NAME)
+        blob = bucket.blob(GCP_BLOB_NAME)
+        
+        # Backup létrehozása ha létezik
+        if os.path.exists(CORE_DATA_FILE):
+            backup_path = CORE_DATA_FILE + '.backup'
+            os.rename(CORE_DATA_FILE, backup_path)
+        
+        # Letöltés
+        blob.download_to_filename(CORE_DATA_FILE)
+        
+        # Fájl validálás
+        try:
+            df = pd.read_parquet(CORE_DATA_FILE)
+            row_count = len(df)
+            col_count = len(df.columns)
+        except Exception as validation_error:
+            # Visszaállítás backup-ból
+            if os.path.exists(CORE_DATA_FILE + '.backup'):
+                os.rename(CORE_DATA_FILE + '.backup', CORE_DATA_FILE)
+            return jsonify({
+                'success': False,
+                'error': f'Letöltött fájl sérült: {str(validation_error)}'
+            }), 500
+        
+        # Backup törlése
+        if os.path.exists(CORE_DATA_FILE + '.backup'):
+            os.remove(CORE_DATA_FILE + '.backup')
+        
+        return jsonify({
+            'success': True,
+            'message': f'Sikeres letöltés: {row_count:,} sor, {col_count} oszlop',
+            'file_path': CORE_DATA_FILE,
+            'row_count': row_count,
+            'col_count': col_count,
+            'recommendation': 'Most futtathatod az LLM adatfeldolgozást!'
+        })
+    except Exception as e:
+        # Visszaállítás backup-ból
+        if os.path.exists(CORE_DATA_FILE + '.backup'):
+            os.rename(CORE_DATA_FILE + '.backup', CORE_DATA_FILE)
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/admin/test-module/<module_name>', methods=['GET'])
+@admin_required
+def test_module(module_name):
+    """Egyedi modul tesztelése"""
+    import time
+    import requests
+    import redis as redis_lib
+    import pickle
+    
+    try:
+        if module_name == 'redis':
+            # Redis kapcsolat teszt
+            redis_client = redis_lib.Redis(
+                host=os.getenv('REDIS_HOST', 'redis'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                db=0,
+                socket_connect_timeout=5
+            )
+            redis_client.ping()
+            info = redis_client.info('server')
+            return jsonify({
+                'success': True,
+                'message': f"Redis {info.get('redis_version', 'N/A')} - Kapcsolat OK"
+            })
+        
+        elif module_name == 'ollama':
+            # Ollama API teszt
+            ollama_host = os.getenv('OLLAMA_HOST', 'http://ollama:11434')
+            response = requests.get(f"{ollama_host}/api/tags", timeout=10)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                model_names = [m['name'] for m in models]
+                return jsonify({
+                    'success': True,
+                    'message': f"{len(models)} modell elérhető: {', '.join(model_names[:3])}"
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                })
+        
+        elif module_name == 'parquet':
+            # Core data parquet fájl teszt
+            if not os.path.exists(CORE_DATA_FILE):
+                return jsonify({
+                    'success': False,
+                    'message': 'core_data.parquet nem található'
+                })
+            
+            df = pd.read_parquet(CORE_DATA_FILE)
+            size_mb = os.path.getsize(CORE_DATA_FILE) / (1024 * 1024)
+            return jsonify({
+                'success': True,
+                'message': f"{len(df):,} sor, {len(df.columns)} oszlop ({size_mb:.1f} MB)"
+            })
+        
+        elif module_name == 'gcp':
+            # GCP Storage kapcsolat teszt
+            if not GCP_AVAILABLE:
+                return jsonify({
+                    'success': False,
+                    'message': 'google-cloud-storage nincs telepítve'
+                })
+            
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(GCP_BUCKET_NAME)
+            blob = bucket.blob(GCP_BLOB_NAME)
+            blob.reload()
+            
+            return jsonify({
+                'success': True,
+                'message': f"Bucket elérhető - Fájl: {blob.size / (1024*1024):.1f} MB"
+            })
+        
+        elif module_name == 'airflow':
+            # Airflow API teszt
+            airflow_url = os.getenv('AIRFLOW_API_URL', 'http://airflow-webserver:8080/api/v1')
+            airflow_user = os.getenv('AIRFLOW_USERNAME', 'admin')
+            airflow_pass = os.getenv('AIRFLOW_PASSWORD', 'admin')
+            
+            response = requests.get(
+                f"{airflow_url}/health",
+                auth=(airflow_user, airflow_pass),
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                health = response.json()
+                return jsonify({
+                    'success': True,
+                    'message': f"Airflow {health.get('metadatabase', {}).get('status', 'N/A')} - OK"
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                })
+        
+        elif module_name == 'model':
+            # ML modell teszt
+            model_path = os.path.join(PARQUET_DIR, 'price_model.pkl')
+            if not os.path.exists(model_path):
+                return jsonify({
+                    'success': False,
+                    'message': 'price_model.pkl nem található'
+                })
+            
+            with open(model_path, 'rb') as f:
+                model_data = pickle.load(f)
+            
+            model = model_data.get('model')
+            metrics = model_data.get('metrics', {})
+            
+            return jsonify({
+                'success': True,
+                'message': f"Modell betöltve - R²: {metrics.get('r2', 0):.3f}, MAPE: {metrics.get('mape', 0):.1f}%"
+            })
+        
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Ismeretlen modul'
+            }), 400
+    
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        })
+
 if __name__ == '__main__':
-    # SocketIO-val indítás WebSocket támogatásért
+    # Flask app indítás (SocketIO eltávolítva v3.0-ban)
     # A 0.0.0.0 host szükséges, hogy a Docker konténeren kívülről is elérhető legyen.
-    socketio.run(app, host='0.0.0.0', port=5001, debug=True, allow_unsafe_werkzeug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)

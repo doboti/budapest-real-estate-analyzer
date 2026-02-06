@@ -1,0 +1,45 @@
+# .airflowignore
+# Fájlok, amelyeket az Airflow DAG scanner-nek figyelmen kívül kell hagynia
+# FONTOS: Ez a fájl REGEX mintákat vár, nem glob mintákat!
+
+# Python cache
+__pycache__/
+.*\.pyc$
+.*\.pyo$
+.*\.pyd$
+
+# Tests
+tests/
+test_.*\.py$
+.*_test\.py$
+
+# Documentation
+.*\.md$
+README.*
+USAGE_GUIDE.*
+ASYNC_IMPLEMENTATION.*
+
+# Config files
+.*\.yml$
+.*\.yaml$
+.*\.json$
+.*\.ini$
+.*\.cfg$
+
+# Scripts
+scripts/
+
+# Temporary files
+.*\.tmp$
+.*\.bak$
+.*\.swp$
+\.DS_Store
+
+# IDE
+\.vscode/
+\.idea/
+.*\.iml$
+
+# Git
+\.git/
+\.gitignore
